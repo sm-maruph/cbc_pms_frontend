@@ -2,9 +2,9 @@ import React from "react";
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
+    <div className="w-full bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
       {/* HERO */}
-      <section className="bg-gradient-to-r from-blue-900 to-blue-700 dark:from-gray-900 dark:to-gray-800 text-white py-16 px-6">
+      <section className="bg-gradient-to-r from-blue-900 to-blue-700 dark:from-gray-900 dark:to-gray-800 text-white py-6 px-6">
         <div className="max-w-6xl mx-auto">
           <h1 className="text-4xl font-bold mb-4">
             Commercial Bank of Ceylon
@@ -17,20 +17,7 @@ export default function Home() {
             service requests, and user issues across bank operations.
           </p>
 
-          <div className="mt-6 flex gap-4">
-            <a
-              href="/admin/login"
-              className="bg-white text-blue-800 px-5 py-2 rounded-lg font-medium"
-            >
-              Sign In
-            </a>
-            <a
-              href="/incidents"
-              className="border border-white px-5 py-2 rounded-lg"
-            >
-              View Incidents
-            </a>
-          </div>
+        
         </div>
       </section>
 

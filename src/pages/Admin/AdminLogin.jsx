@@ -20,7 +20,7 @@ function AdminLogin({ onLogin }) {
       // =========================
       if (username === "admin" && password === "admin123") {
         const fakeToken = "demo-jwt-token-xyz-123";
-        onLogin(fakeToken);
+        onLogin(fakeToken, username);
         setLoading(false);
         return;
       }
@@ -34,7 +34,7 @@ function AdminLogin({ onLogin }) {
       });
 
       if (res.data?.token) {
-        onLogin(res.data.token);
+        onLogin(res.data.token, username);
       } else {
         setError("Login failed: No token received");
       }

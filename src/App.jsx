@@ -6,130 +6,109 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
-import { jwtDecode } from "jwt-decode";
+
+// Auth Pages
+import Login from "./pages/Login";
+
+// User Pages
+import UserDashboard from "./pages/user/UserDashboard";
+import CreateTicket from "./pages/user/CreateTicket";
+
+// Admin Pages
+import AdminDashboard from "./pages/admin/AdminDashboard";
+import AdminTickets from "./pages/admin/AdminTickets";
+import AdminUsers from "./pages/admin/AdminUsers";
 
 // Shared Components
 import Navbar from "./components/navbar/Navbar";
 import Footer from "./components/Footer";
-import FloatingWhatsApp from "./components/FloatingWhatsApp";
 import ScrollToTop from "./components/ScrollToTop";
-
-// Public Pages
-import Landing from "./pages/LandingPage";
-import Home from "./pages/Home";
-import About from "./pages/About";
-import Contact from "./pages/Contact";
-import Woven from "./pages/services/Woven";
-import Knit from "./pages/services/Knit";
-import Sample from "./pages/services/Sample";
-import Merchandising from "./pages/services/Merchandising";
-import Compliance from "./pages/Compliance";
-
-// Admin Pages
-import Login from "./pages/Admin/AdminLogin";
-import AdminDashboard from "./pages/Admin/AdminDashboard";
-import Banners from "./pages/Admin/Banners";
-import Services from "./pages/Admin/Services";
-import Clients from "./pages/Admin/Clients";
 
 function AppWrapper() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const isAdminPage = location.pathname.startsWith("/admin");
-
-  const [token, setToken] = useState(() => localStorage.getItem("adminToken"));
+  const [user, setUser] = useState(() => {
+    const stored = localStorage.getItem("cbcUser");
+    return stored ? JSON.parse(stored) : null;
+  });
 
   // =========================
-  // TOKEN VALIDATION
+  // CHECK IF LOGGED IN
   // =========================
-  const isTokenValid = (token) => {
-    if (!token) return false;
+  const isLoggedIn = !!user;
+  const isAdmin = user?.role === "admin";
+  const isUser = user?.role === "user";
 
-    // allow demo token
-    if (token.startsWith("demo-")) return true;
-
-    try {
-      const decoded = jwtDecode(token);
-      return decoded.exp * 1000 > Date.now();
-    } catch {
-      return false;
+  // =========================
+  // LOGIN HANDLER
+  // =========================
+  const handleLogin = (userData) => {
+    setUser(userData);
+    localStorage.setItem("cbcUser", JSON.stringify(userData));
+    
+    if (userData.role === "admin") {
+      navigate("/admin");
+    } else {
+      navigate("/dashboard");
     }
   };
 
   // =========================
-  // LOGOUT
+  // LOGOUT HANDLER
   // =========================
   const handleLogout = () => {
-    setToken(null);
-    localStorage.removeItem("adminToken");
-    navigate("/admin/login");
+    setUser(null);
+    localStorage.removeItem("cbcUser");
+    navigate("/");
   };
 
   // =========================
-  // LOGIN SUCCESS
-  // =========================
-  const handleLogin = (newToken) => {
-    setToken(newToken);
-    localStorage.setItem("adminToken", newToken);
-
-    // ✅ IMPORTANT CHANGE: redirect to HOME after login
-    navigate("/home");
-  };
-
-  // =========================
-  // AUTO LOGOUT IF EXPIRED
+  // REDIRECT IF NOT LOGGED IN
   // =========================
   useEffect(() => {
-    if (token && !isTokenValid(token)) {
-      handleLogout();
+    const protectedRoutes = ["/dashboard", "/create-ticket", "/admin", "/admin/tickets", "/admin/users"];
+    const currentPath = location.pathname;
+    
+    if (protectedRoutes.some(route => currentPath.startsWith(route)) && !isLoggedIn) {
+      navigate("/");
     }
-  }, [token]);
+  }, [isLoggedIn, location.pathname, navigate]);
 
   return (
     <>
-      {/* NAVBAR (PUBLIC ONLY) */}
-      {!isAdminPage && <Navbar />}
+      {/* NAVBAR */}
+      {isLoggedIn && <Navbar user={user} onLogout={handleLogout} />}
 
       <ScrollToTop />
 
-      <main>
+      <main className="w-full">
         <Routes>
+          {/* ===================== */}
+          {/* AUTH ROUTES */}
+          {/* ===================== */}
+          <Route path="/" element={<Login onLogin={handleLogin} />} />
+
+          {/* ===================== */}
+          {/* USER ROUTES */}
+          {/* ===================== */}
+          {isLoggedIn && isUser && (
+            <>
+              <Route path="/dashboard" element={<UserDashboard user={user} />} />
+              <Route path="/create-ticket" element={<CreateTicket user={user} />} />
+            </>
+          )}
+
           {/* ===================== */}
           {/* ADMIN ROUTES */}
           {/* ===================== */}
-          <Route
-            path="/admin"
-            element={
-              isTokenValid(token) ? (
-                <AdminDashboard token={token} onLogout={handleLogout} />
-              ) : (
-                <Login onLogin={handleLogin} />
-              )
-            }
-          >
-            <Route path="banners" element={<Banners />} />
-            <Route path="services" element={<Services />} />
-            <Route path="clients" element={<Clients />} />
-          </Route>
-
-          <Route
-            path="/admin/login"
-            element={<Login onLogin={handleLogin} />}
-          />
-
-          {/* ===================== */}
-          {/* PUBLIC ROUTES */}
-          {/* ===================== */}
-          <Route path="/" element={<Landing />} />
-          <Route path="/home" element={<Home />} />
-          <Route path="/about" element={<About />} />
-          <Route path="/contact" element={<Contact />} />
-          <Route path="/services/woven" element={<Woven />} />
-          <Route path="/services/knit" element={<Knit />} />
-          <Route path="/services/sample" element={<Sample />} />
-          <Route path="/services/merchandising" element={<Merchandising />} />
-          <Route path="/compliance" element={<Compliance />} />
+          {isLoggedIn && isAdmin && (
+            <>
+              <Route path="/admin" element={<AdminDashboard user={user} />} />
+              <Route path="/admin/tickets" element={<AdminTickets user={user} />} />
+              <Route path="/admin/users" element={<AdminUsers user={user} />} />
+            </>
+          )}
 
           {/* 404 */}
           <Route
@@ -143,13 +122,8 @@ function AppWrapper() {
         </Routes>
       </main>
 
-      {/* FOOTER ONLY PUBLIC */}
-      {!isAdminPage && (
-        <>
-          <FloatingWhatsApp />
-          <Footer />
-        </>
-      )}
+      {/* FOOTER */}
+      {isLoggedIn && <Footer />}
     </>
   );
 }

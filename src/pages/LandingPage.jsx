@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 
 export default function Landing() {
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
+    <div className="w-full bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
       {/* HERO */}
       <section className="bg-gradient-to-r from-blue-900 to-blue-700 dark:from-gray-900 dark:to-gray-800 text-white px-6 py-20">
         <div className="max-w-6xl mx-auto">
