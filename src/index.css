@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+/* Enable custom dark variant for Tailwind v4 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* 🌤 Light Mode Palette */
+:root {
+  --color-primary: #dbe3eb;   /* Blue 600 */
+  --color-secondary: #BCCCDC; /* Emerald 500 */
+  --color-accent: #D9EAFD;    /* Amber 500 */
+  --color-neutral: #F8FAFC;   /* Gray 100 */
+  --color-hover: #78acff;    /* Gray 700 */
+  --color-h: #ffffff;    /* Gray 700 */
+  --color-text-primary: #111827;  /* Gray 900 */
+  --color-text-secondary: #374151; /* Gray 700 */
+
+  --font-heading: 'Montserrat', sans-serif;
+  --font-sans: 'Inter', sans-serif;
+}
+
+/* 🌙 Dark Mode Palette */
+.dark {
+  --color-primary: #000000;   /* Blue 400 */
+  --color-secondary: #8E1616; /* Emerald 400 */
+  --color-accent: #2f2b2b;    /* Amber 400 */
+  --color-neutral: #e5d5d5;   /* Gray 800 */
+  --color-hover: #78acff;    /* Gray 700 */
+  --color-h: #040000;    /* Gray 700 */
+
+  --color-text-primary: #F9FAFB;  /* Gray 50 */
+  --color-text-secondary: #D1D5DB; /* Gray 300 */
+
+  --font-heading: 'Montserrat', sans-serif;
+  --font-sans: 'Inter', sans-serif;
+}
+
+/* 🎨 Utility Classes */
+.bg-primary {
+  background-color: var(--color-primary);
+}
+.bg-secondary {
+  background-color: var(--color-secondary);
+}
+.bg-accent {
+  background-color: var(--color-accent);
+}
+.bg-neutral {
+  background-color: var(--color-neutral);
+}
+.bg-inverse {
+  background-color: var(--color-text-primary);
+}
+.text-primary {
+  color: var(--color-primary);
+}
+.text-secondary {
+  color: var(--color-secondary);
+}
+.text-accent {
+  color: var(--color-accent);
+}
+.text-neutral {
+  color: var(--color-neutral);
+}
+
+.text-heading {
+  color: var(--color-text-primary);
+}
+.text-body {
+  color: var(--color-text-secondary);
+}
+.text-hover {
+  color: var(--color-hover);
+}
+.font-heading {
+  font-family: var(--font-heading);
+}
+
+.font-sans {
+  font-family: var(--font-sans);
+}
+
+/* Two-color gradient: black to red */
+.bg-primary-gradient {
+  background-image: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* Fallback for browsers without color-mix */
+.bg-primary-gradient-fallback {
+  background-image: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* Stronger variant (same two-color gradient) */
+.bg-primary-gradient-strong {
+  background-image: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
