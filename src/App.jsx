@@ -16,8 +16,8 @@ import CreateTicket from "./pages/user/CreateTicket";
 
 // Admin Pages
 import AdminDashboard from "./pages/Admin/AdminDashboard";
-import AdminTickets from "./pages/admin/AdminTickets";
-import AdminUsers from "./pages/admin/AdminUsers";
+import AdminTickets from "./pages/Admin/AdminTickets";
+import AdminUsers from "./pages/Admin/AdminUsers";
 
 // Shared Components
 import Navbar from "./components/navbar/Navbar";
