@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import logo from "../../src/components/images/cbc_logo.png";
 
 export default function Login({ onLogin }) {
   const [email, setEmail] = useState("");
@@ -6,7 +7,6 @@ export default function Login({ onLogin }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Demo users for testing
   const demoUsers = {
     "admin@cbc.com": { password: "admin123", role: "admin", name: "Admin User" },
     "user@cbc.com": { password: "user123", role: "user", name: "John Doe" },
@@ -19,7 +19,6 @@ export default function Login({ onLogin }) {
     setLoading(true);
 
     try {
-      // Check demo credentials
       if (demoUsers[email] && demoUsers[email].password === password) {
         const demoUser = demoUsers[email];
         onLogin({
@@ -33,56 +32,77 @@ export default function Login({ onLogin }) {
         return;
       }
 
-      // Real API call would go here
       setError("Invalid email or password");
     } catch (err) {
-      setError("An error occurred. Please try again.");
+      setError("Something went wrong");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-600 to-blue-900 px-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8">
+    <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden
+      bg-gradient-to-br from-green-500 via-blue-600 to-blue-900">
+
+      {/* 🔥 BACKGROUND GLOW EFFECTS */}
+      <div className="absolute w-72 h-72 bg-green-400 opacity-30 rounded-full blur-3xl top-10 left-10"></div>
+      <div className="absolute w-72 h-72 bg-blue-400 opacity-30 rounded-full blur-3xl bottom-10 right-10"></div>
+
+      {/* 💎 GLASS CARD */}
+      <div className="w-full max-w-md p-8 rounded-2xl 
+        bg-white/10 backdrop-blur-xl border border-white/20 
+        shadow-[0_10px_40px_rgba(0,0,0,0.3)]">
+
         {/* HEADER */}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <span className="text-2xl font-bold text-white">CBC</span>
+          <div className="flex justify-center mb-1">
+            <img src={logo} alt="CBC Logo" className="h-32 object-contain drop-shadow-lg" />
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+
+          <h1 className="text-3xl font-bold text-white tracking-wide">
             IT Support Portal
           </h1>
-          <p className="text-gray-600 text-sm">
+          <p className="text-sm text-green-100 mt-1">
             Commercial Bank of Ceylon
           </p>
         </div>
 
         {/* FORM */}
         <form onSubmit={handleSubmit} className="space-y-5">
+
+          {/* EMAIL */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
+            <label className="text-sm text-white/80 mb-1 block">
               Email Address
             </label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-3 rounded-lg border-2 border-gray-300 focus:border-blue-600 focus:outline-none bg-gray-50 text-gray-900 transition"
+              className="w-full px-4 py-3 rounded-lg 
+                bg-white/20 text-white placeholder-white/60
+                border border-white/30 
+                focus:outline-none focus:ring-2 focus:ring-green-400
+                transition"
               placeholder="Enter your email"
               required
             />
           </div>
 
+          {/* PASSWORD */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
+            <label className="text-sm text-white/80 mb-1 block">
               Password
             </label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 rounded-lg border-2 border-gray-300 focus:border-blue-600 focus:outline-none bg-gray-50 text-gray-900 transition"
+              className="w-full px-4 py-3 rounded-lg 
+                bg-white/20 text-white placeholder-white/60
+                border border-white/30 
+                focus:outline-none focus:ring-2 focus:ring-green-400
+                transition"
               placeholder="Enter your password"
               required
             />
@@ -90,42 +110,35 @@ export default function Login({ onLogin }) {
 
           {/* ERROR */}
           {error && (
-            <div className="p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-sm">
+            <div className="text-sm text-red-200 bg-red-500/20 border border-red-400/30 p-3 rounded-lg">
               {error}
             </div>
           )}
 
-          {/* SUBMIT BUTTON */}
+          {/* BUTTON */}
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-3 rounded-lg transition transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-3 rounded-lg font-semibold text-white
+              bg-gradient-to-r from-green-500 to-blue-600
+              hover:from-green-600 hover:to-blue-700
+              transition transform hover:scale-105
+              shadow-lg disabled:opacity-50"
           >
             {loading ? "Signing in..." : "Sign In"}
           </button>
         </form>
 
-        {/* DEMO CREDENTIALS */}
-        <div className="mt-8 pt-6 border-t border-gray-200">
-          <p className="text-sm text-gray-600 font-semibold mb-3">
-            📌 Demo Credentials:
-          </p>
-          <div className="space-y-2 text-xs text-gray-600 bg-blue-50 p-3 rounded-lg">
-            <p>
-              <span className="font-semibold">Admin:</span> admin@cbc.com / admin123
-            </p>
-            <p>
-              <span className="font-semibold">User:</span> user@cbc.com / user123
-            </p>
-            <p>
-              <span className="font-semibold">User 2:</span> user2@cbc.com / user123
-            </p>
-          </div>
+        {/* DEMO */}
+        <div className="mt-8 border-t border-white/20 pt-5 text-xs text-white/80">
+          <p className="font-semibold mb-2">Demo:</p>
+          <p>Admin: admin@cbc.com / admin123</p>
+          <p>User: user@cbc.com / user123</p>
         </div>
 
         {/* FOOTER */}
-        <div className="mt-6 text-center text-xs text-gray-500">
-          © 2026 Commercial Bank of Ceylon. All rights reserved.
+        <div className="mt-6 text-center text-xs text-white/60">
+          © 2026 Commercial Bank of Ceylon
         </div>
       </div>
     </div>

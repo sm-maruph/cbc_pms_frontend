@@ -123,7 +123,7 @@ function AppWrapper() {
       </main>
 
       {/* FOOTER */}
-      {isLoggedIn && <Footer />}
+      {/* {isLoggedIn && <Footer />} */}
     </>
   );
 }

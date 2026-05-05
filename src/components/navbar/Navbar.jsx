@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import logo from "../images/cbc_logo.png"; // Assuming you have a logo image in assets
 
 export default function Navbar({ user, onLogout }) {
   const navigate = useNavigate();
@@ -19,7 +20,12 @@ export default function Navbar({ user, onLogout }) {
 
   useEffect(() => {
     function onClick(e) {
-      if (open && menuRef.current && !menuRef.current.contains(e.target) && !burgerRef.current?.contains(e.target)) {
+      if (
+        open &&
+        menuRef.current &&
+        !menuRef.current.contains(e.target) &&
+        !burgerRef.current?.contains(e.target)
+      ) {
         setOpen(false);
       }
     }
@@ -45,17 +51,26 @@ export default function Navbar({ user, onLogout }) {
       ];
 
   return (
-    <nav className="flex items-center justify-between px-4 md:px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-800 shadow-lg sticky top-0 z-50 w-full">
+    <nav className="flex items-center justify-between px-4 md:px-8 py-4 bg-gradient-to-r from-green-600 via-blue-600 to-blue-800 shadow-lg sticky top-0 z-50 w-full">
+      
       {/* LEFT: BRAND */}
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center text-blue-600 font-bold shadow">
-          CBC
-        </div>
+        <img
+          src={logo}
+          alt="CBC Logo"
+          className="h-16 w-auto bg-transparent p-1 rounded-md shadow"
+        />
+
         <div>
-          <Link to={isAdmin ? "/admin" : "/dashboard"} className="text-lg font-bold text-white hover:text-blue-100">
+          <Link
+            to={isAdmin ? "/admin" : "/dashboard"}
+            className="text-lg font-bold text-white hover:text-green-200 transition"
+          >
             IT Support Portal
           </Link>
-          <p className="text-xs text-blue-100">Commercial Bank of Ceylon</p>
+          <p className="text-xs text-green-100">
+            Commercial Bank of Ceylon
+          </p>
         </div>
       </div>
 
@@ -63,9 +78,9 @@ export default function Navbar({ user, onLogout }) {
       <ul className="hidden md:flex items-center gap-8 text-white">
         {navLinks.map((link) => (
           <li key={link.name}>
-            <Link 
+            <Link
               to={link.path}
-              className="font-medium hover:text-blue-100 transition"
+              className="font-medium hover:text-green-200 transition"
             >
               {link.name}
             </Link>
@@ -73,25 +88,31 @@ export default function Navbar({ user, onLogout }) {
         ))}
       </ul>
 
-      {/* RIGHT: USER INFO & LOGOUT */}
+      {/* RIGHT */}
       <div className="flex items-center gap-4">
-        {/* USER INFO (Desktop) */}
-        <div className="hidden md:flex items-center gap-3 px-4 py-2 bg-blue-500 rounded-lg">
+        
+        {/* USER INFO */}
+        <div className="hidden md:flex items-center gap-3 px-3 py-2 bg-white/10 backdrop-blur-md rounded-lg border border-white/20">
           <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center">
-            <span className="font-bold text-blue-600 text-sm">
+            <span className="font-bold text-green-600 text-sm">
               {user?.name?.charAt(0).toUpperCase()}
             </span>
           </div>
+
           <div className="flex flex-col">
-            <span className="text-sm font-semibold text-white">{user?.name}</span>
-            <span className="text-xs text-blue-100">{user?.role.toUpperCase()}</span>
+            <span className="text-sm font-semibold text-white">
+              {user?.name}
+            </span>
+            <span className="text-xs text-green-100">
+              {user?.role.toUpperCase()}
+            </span>
           </div>
         </div>
 
-        {/* LOGOUT BUTTON (Desktop) */}
+        {/* LOGOUT */}
         <button
           onClick={handleLogout}
-          className="hidden md:inline-block bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition"
+          className="hidden md:inline-block bg-white text-green-700 hover:bg-green-100 font-semibold py-2 px-4 rounded-lg transition shadow"
         >
           Logout
         </button>
@@ -111,34 +132,36 @@ export default function Navbar({ user, onLogout }) {
       {/* MOBILE MENU */}
       <div
         ref={menuRef}
-        className={`fixed top-0 right-0 h-full w-3/4 bg-gradient-to-b from-blue-600 to-blue-800 shadow-lg transform transition-transform duration-300 md:hidden z-40 ${
+        className={`fixed top-0 right-0 h-full w-3/4 bg-gradient-to-b from-green-600 via-blue-600 to-blue-800 shadow-lg transform transition-transform duration-300 md:hidden z-40 ${
           open ? "translate-x-0" : "translate-x-full"
         }`}
       >
         <div className="p-6 space-y-4">
-          {/* USER INFO (Mobile) */}
-          <div className="mb-4 pb-4 border-b border-blue-500">
-            <p className="text-sm font-semibold text-white mb-2">
+
+          {/* USER INFO */}
+          <div className="mb-4 pb-4 border-b border-white/20">
+            <p className="text-sm font-semibold text-white mb-1">
               {user?.name}
             </p>
-            <p className="text-xs text-blue-100 mb-3">
+            <p className="text-xs text-green-100 mb-3">
               {user?.role.toUpperCase()} - {user?.department}
             </p>
+
             <button
               onClick={handleLogout}
-              className="w-full bg-red-500 hover:bg-red-600 text-white font-semibold py-2 rounded-lg transition"
+              className="w-full bg-white text-green-700 hover:bg-green-100 font-semibold py-2 rounded-lg transition"
             >
               Logout
             </button>
           </div>
 
-          {/* NAV LINKS (Mobile) */}
+          {/* NAV LINKS */}
           {navLinks.map((link) => (
             <Link
               key={link.name}
               to={link.path}
               onClick={() => setOpen(false)}
-              className="block py-2 font-medium text-white hover:text-blue-100 transition"
+              className="block py-2 font-medium text-white hover:text-green-200 transition"
             >
               {link.name}
             </Link>

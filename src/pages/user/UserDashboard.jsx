@@ -1,187 +1,671 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, Legend
+} from "recharts";
+import {
+  Search, Filter, Clock, User, Server, AlertCircle,
+  CheckCircle, Edit, Trash2, Plus, X,
+  Activity, TrendingUp, FileText, Zap, AlertTriangle
+} from "lucide-react";
+
+/* USERS */
+const defaultUsers = [
+  { email: "jahidul@cbc.com", name: "Jahidul Balat" },
+  { email: "sifat@cbc.com", name: "Sifat Nur Billah" },
+  { email: "supriya@cbc.com", name: "Supriya Das Gupta" },
+  { email: "tanim@cbc.com", name: "Tanim Mahmud" },
+  { email: "cito@cbc.com", name: "CITO" },
+  { email: "eazuddin@cbc.com", name: "Eaz Uddin" },
+  { email: "tudu@cbc.com", name: "Tudu" },
+  { email: "abubakar@cbc.com", name: "Abu Bakar Siddiq" },
+  { email: "shah@cbc.com", name: "Shah Mohammad Al Noor" },
+  { email: "salman@cbc.com", name: "Salman Ahmed" },
+  { email: "sm.maruph@cbc.com", name: "S. M. Maruph" },
+  { email: "raiyan@cbc.com", name: "Raiyan" },
+];
+
+const statusConfig = {
+  open: { color: "bg-red-100 text-red-700 border-red-200", icon: AlertCircle, label: "Open" },
+  "in-progress": { color: "bg-yellow-100 text-yellow-700 border-yellow-200", icon: Activity, label: "In Progress" },
+  resolved: { color: "bg-green-100 text-green-700 border-green-200", icon: CheckCircle, label: "Resolved" }
+};
+
+const riskConfig = {
+  low: { color: "bg-blue-100 text-blue-700", label: "Low" },
+  medium: { color: "bg-orange-100 text-orange-700", label: "Medium" },
+  high: { color: "bg-red-100 text-red-700", label: "High" }
+};
+
+const COLORS = {
+  open: "#ef4444",
+  "in-progress": "#eab308",
+  resolved: "#22c55e",
+  low: "#3b82f6",
+  medium: "#f97316",
+  high: "#ef4444"
+};
 
 export default function UserDashboard({ user }) {
-  const [tickets, setTickets] = useState(() => {
-    const stored = localStorage.getItem("cbcTickets");
-    return stored ? JSON.parse(stored) : [];
-  });
-
+  const [tickets, setTickets] = useState([]);
+  const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [sortBy, setSortBy] = useState("date");
 
-  const relatedTickets = tickets.filter((t) => {
-    const assignedEmail = t.assignedToEmail || "";
-    const assignedName = t.assignedToName || t.assignedTo || "";
-    return (
-      t.reportedBy === user.email ||
-      assignedEmail === user.email ||
-      assignedName === user.name ||
-      assignedEmail === user.email
+  const [selectedTicket, setSelectedTicket] = useState(null);
+  const [editTicket, setEditTicket] = useState(null);
+  const [deleteWarning, setDeleteWarning] = useState(null);
+
+  const [notifications, setNotifications] = useState([]);
+
+  /* LOAD */
+  useEffect(() => {
+    const stored = JSON.parse(localStorage.getItem("cbcTickets") || "[]");
+    setTickets(stored);
+  }, []);
+
+  /* NOTIFY */
+  const notify = (msg, type = "success") => {
+    const id = Date.now();
+    setNotifications((prev) => [...prev, { id, msg, type }]);
+
+    setTimeout(() => {
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+    }, 3000);
+  };
+
+  /* SYNC */
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const stored = JSON.parse(localStorage.getItem("cbcTickets") || "[]");
+      setTickets(stored);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  /* UPDATE FIELD */
+  const updateField = (field, value) => {
+    setEditTicket((prev) => ({ ...prev, [field]: value }));
+  };
+
+  /* CLOCK */
+  const setClock = (field) => {
+    updateField(field, new Date().toLocaleString());
+  };
+
+  /* SAVE */
+  const saveTicket = () => {
+    const updated = tickets.map((t) =>
+      t.id === editTicket.id ? editTicket : t
     );
-  });
 
-  const filteredTickets =
-    filterStatus === "all"
-      ? tickets
-      : tickets.filter((t) => t.status === filterStatus);
+    setTickets(updated);
+    localStorage.setItem("cbcTickets", JSON.stringify(updated));
 
-  const stats = {
-    total: tickets.length,
-    open: tickets.filter((t) => t.status === "open").length,
-    inProgress: tickets.filter((t) => t.status === "in-progress").length,
-    resolved: tickets.filter((t) => t.status === "resolved").length,
-    related: relatedTickets.length,
+    notify("Ticket updated successfully");
+    setSelectedTicket(null);
+    setEditTicket(null);
   };
 
-  const getRiskColor = (risk) => {
-    const colors = {
-      HIGH: "bg-red-100 text-red-800 border-red-300",
-      MEDIUM: "bg-yellow-100 text-yellow-800 border-yellow-300",
-      LOW: "bg-green-100 text-green-800 border-green-300",
-    };
-    return colors[risk] || "bg-gray-100 text-gray-800 border-gray-300";
+  /* DELETE WITH WARNING */
+  const confirmDelete = (id) => {
+    setDeleteWarning(id);
   };
 
-  const getStatusColor = (status) => {
-    const colors = {
-      open: "bg-blue-100 text-blue-800 border-blue-300",
-      "in-progress": "bg-orange-100 text-orange-800 border-orange-300",
-      resolved: "bg-green-100 text-green-800 border-green-300",
-    };
-    return colors[status] || "bg-gray-100 text-gray-800 border-gray-300";
+  const handleDelete = (id) => {
+    const updated = tickets.filter((t) => t.id !== id);
+    setTickets(updated);
+    localStorage.setItem("cbcTickets", JSON.stringify(updated));
+
+    notify("Ticket deleted successfully");
+    setSelectedTicket(null);
+    setEditTicket(null);
+    setDeleteWarning(null);
   };
 
-  const shouldShowInstruction = (ticket) => {
-    const assignedEmail = ticket.assignedToEmail || "";
-    const assignedName = ticket.assignedToName || ticket.assignedTo || "";
-    return (
-      ticket.specialInstruction &&
-      (ticket.reportedBy === user.email || assignedEmail === user.email || assignedName === user.name)
-    );
-  };
+  /* ENSURE TICKETS HAVE RISK LEVEL (DEFAULT TO LOW IF MISSING) */
+  useEffect(() => {
+    let needsUpdate = false;
+    const updatedTickets = tickets.map(ticket => {
+      if (!ticket.riskLevel) {
+        needsUpdate = true;
+        return { ...ticket, riskLevel: "low" };
+      }
+      return ticket;
+    });
+    if (needsUpdate) {
+      setTickets(updatedTickets);
+      localStorage.setItem("cbcTickets", JSON.stringify(updatedTickets));
+    }
+  }, [tickets]);
+
+  /* FILTER */
+  const filtered = useMemo(() => {
+    return tickets
+      .filter((t) => filterStatus === "all" || t.status === filterStatus)
+      .filter((t) =>
+        (t.systemName || "").toLowerCase().includes(search.toLowerCase()) ||
+        (t.reportedByName || "").toLowerCase().includes(search.toLowerCase()) ||
+        (t.problemDetails || "").toLowerCase().includes(search.toLowerCase())
+      )
+      .sort((a, b) => {
+        if (sortBy === "date") return new Date(b.date) - new Date(a.date);
+        if (sortBy === "status") return a.status.localeCompare(b.status);
+        if (sortBy === "risk") {
+          const riskOrder = { high: 3, medium: 2, low: 1 };
+          return (riskOrder[b.riskLevel] || 1) - (riskOrder[a.riskLevel] || 1);
+        }
+        return 0;
+      });
+  }, [tickets, search, filterStatus, sortBy]);
+
+  /* STATS */
+  const stats = useMemo(() => {
+    const open = tickets.filter(t => t.status === "open").length;
+    const progress = tickets.filter(t => t.status === "in-progress").length;
+    const resolved = tickets.filter(t => t.status === "resolved").length;
+    const highRisk = tickets.filter(t => t.riskLevel === "high").length;
+    const mediumRisk = tickets.filter(t => t.riskLevel === "medium").length;
+    const lowRisk = tickets.filter(t => t.riskLevel === "low").length;
+    return { open, progress, resolved, total: tickets.length, highRisk, mediumRisk, lowRisk };
+  }, [tickets]);
+
+  /* CHART DATA */
+  const statusChartData = [
+    { name: "Open", value: stats.open, color: COLORS.open },
+    { name: "In Progress", value: stats.progress, color: COLORS["in-progress"] },
+    { name: "Resolved", value: stats.resolved, color: COLORS.resolved },
+  ].filter(item => item.value > 0);
+
+  const riskChartData = [
+    { name: "Low Risk", value: stats.lowRisk, color: COLORS.low },
+    { name: "Medium Risk", value: stats.mediumRisk, color: COLORS.medium },
+    { name: "High Risk", value: stats.highRisk, color: COLORS.high },
+  ].filter(item => item.value > 0);
 
   return (
-    <div className="min-h-screen bg-gray-100 py-8 px-4">
-      <div className="max-w-7xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">Incident Dashboard</h1>
-          <p className="text-gray-600">
-            Welcome back, <span className="font-semibold">{user.name}</span>. All registered users can view tickets and assignment updates here.
-          </p>
-        </div>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-4 md:p-6">
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow p-6 border-l-4 border-blue-600">
-            <p className="text-gray-600 text-sm font-semibold mb-1">Total Incidents</p>
-            <p className="text-4xl font-bold text-gray-900">{stats.total}</p>
-          </div>
-          <div className="bg-white rounded-lg shadow p-6 border-l-4 border-yellow-500">
-            <p className="text-gray-600 text-sm font-semibold mb-1">Open</p>
-            <p className="text-4xl font-bold text-gray-900">{stats.open}</p>
-          </div>
-          <div className="bg-white rounded-lg shadow p-6 border-l-4 border-orange-500">
-            <p className="text-gray-600 text-sm font-semibold mb-1">In Progress</p>
-            <p className="text-4xl font-bold text-gray-900">{stats.inProgress}</p>
-          </div>
-          <div className="bg-white rounded-lg shadow p-6 border-l-4 border-green-600">
-            <p className="text-gray-600 text-sm font-semibold mb-1">Resolved</p>
-            <p className="text-4xl font-bold text-gray-900">{stats.resolved}</p>
-          </div>
-          <div className="bg-white rounded-lg shadow p-6 border-l-4 border-indigo-500">
-            <p className="text-gray-600 text-sm font-semibold mb-1">Your Related Tickets</p>
-            <p className="text-4xl font-bold text-gray-900">{stats.related}</p>
-          </div>
-        </div>
-
-        <div className="mb-6">
-          <Link
-            to="/create-ticket"
-            className="inline-block bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-3 px-6 rounded-lg shadow transition transform hover:scale-105"
+      {/* NOTIFICATIONS */}
+      <div className="fixed top-4 right-4 space-y-2 z-50">
+        {notifications.map((n) => (
+          <div
+            key={n.id}
+            className={`flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg transform transition-all duration-300 animate-slide-in ${
+              n.type === "success" ? "bg-green-500 text-white" : "bg-red-500 text-white"
+            }`}
           >
-            + Create New Ticket
+            {n.type === "success" ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
+            <span className="text-sm font-medium">{n.msg}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* DELETE WARNING MODAL */}
+      {deleteWarning && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-12 w-12 bg-red-100 rounded-full flex items-center justify-center">
+                <AlertTriangle size={24} className="text-red-600" />
+              </div>
+              <h3 className="text-xl font-semibold text-gray-800">Delete Ticket</h3>
+            </div>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to delete this ticket? This action cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setDeleteWarning(null)}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDelete(deleteWarning)}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* HEADER */}
+      <div className="mb-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">
+              Incident Dashboard
+            </h1>
+            <p className="text-gray-500 mt-1">Welcome back, {user.name}</p>
+          </div>
+          <Link
+            className="flex items-center gap-2 bg-gradient-to-r from-green-600 to-green-500 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105"
+            to="/create-ticket"
+          >
+            <Plus size={18} />
+            New Ticket
           </Link>
         </div>
+      </div>
 
-        <div className="bg-white rounded-lg shadow p-4 mb-6">
-          <div className="flex flex-wrap gap-2">
-            {[
-              { status: "all", label: "All" },
-              { status: "open", label: "Open" },
-              { status: "in-progress", label: "In Progress" },
-              { status: "resolved", label: "Resolved" },
-            ].map((item) => (
-              <button
-                key={item.status}
-                onClick={() => setFilterStatus(item.status)}
-                className={`px-4 py-2 rounded-lg font-semibold transition ${
-                  filterStatus === item.status
-                    ? "bg-blue-600 text-white"
-                    : "bg-gray-200 text-gray-800 hover:bg-gray-300"
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
+      {/* STATS CARDS - Compact */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <div className="bg-white rounded-xl shadow-sm p-3 border border-gray-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-gray-500 text-xs">Total</p>
+              <p className="text-2xl font-bold text-gray-800">{stats.total}</p>
+            </div>
+            <div className="h-10 w-10 bg-blue-100 rounded-lg flex items-center justify-center">
+              <FileText className="text-blue-600" size={20} />
+            </div>
           </div>
         </div>
-
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          {filteredTickets.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">
-              <p className="text-lg font-semibold mb-2">No tickets found</p>
-              <p>
-                {filterStatus === "all"
-                  ? "Create your first ticket to get started!"
-                  : "No tickets with this status."}
-              </p>
+        <div className="bg-white rounded-xl shadow-sm p-3 border border-gray-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-gray-500 text-xs">Open</p>
+              <p className="text-2xl font-bold text-red-600">{stats.open}</p>
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b-2 border-gray-200">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">S/L</th>
-                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">System</th>
-                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Reported By</th>
-                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Assigned To</th>
-                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Special Instruction</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {filteredTickets.map((ticket, idx) => {
-                    const assignedTo = ticket.assignedToName || ticket.assignedTo || "Unassigned";
-                    return (
-                      <tr key={ticket.id} className="hover:bg-gray-50 transition">
-                        <td className="px-6 py-4 text-sm font-semibold text-gray-900">{idx + 1}</td>
-                        <td className="px-6 py-4 text-sm text-gray-600">{new Date(ticket.date).toLocaleDateString()}</td>
-                        <td className="px-6 py-4 text-sm font-medium text-gray-900">{ticket.systemName}</td>
-                        <td className="px-6 py-4 text-sm text-gray-600">{ticket.reportedByName || ticket.reportedBy}</td>
-                        <td className="px-6 py-4 text-sm text-gray-600">{assignedTo}</td>
-                        <td className="px-6 py-4">
-                          <span className={`px-3 py-1 rounded-full text-xs font-bold border ${getStatusColor(ticket.status)}`}>
-                            {ticket.status.toUpperCase()}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-600">
-                          {shouldShowInstruction(ticket) ? (
-                            <span className="block rounded-full bg-yellow-50 text-yellow-800 px-3 py-1 text-xs font-semibold border border-yellow-200">
-                              {ticket.specialInstruction}
-                            </span>
-                          ) : (
-                            <span className="text-gray-400">-</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="h-10 w-10 bg-red-100 rounded-lg flex items-center justify-center">
+              <AlertCircle className="text-red-600" size={20} />
             </div>
-          )}
+          </div>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm p-3 border border-gray-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-gray-500 text-xs">In Progress</p>
+              <p className="text-2xl font-bold text-yellow-600">{stats.progress}</p>
+            </div>
+            <div className="h-10 w-10 bg-yellow-100 rounded-lg flex items-center justify-center">
+              <Activity className="text-yellow-600" size={20} />
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm p-3 border border-gray-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-gray-500 text-xs">Resolved</p>
+              <p className="text-2xl font-bold text-green-600">{stats.resolved}</p>
+            </div>
+            <div className="h-10 w-10 bg-green-100 rounded-lg flex items-center justify-center">
+              <CheckCircle className="text-green-600" size={20} />
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* PIE CHARTS */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
+          <h2 className="text-md font-semibold text-gray-800 mb-3 flex items-center gap-2">
+            <TrendingUp size={18} /> Status Distribution
+          </h2>
+          <ResponsiveContainer width="100%" height={260}>
+            <PieChart>
+              <Pie
+                data={statusChartData}
+                cx="50%"
+                cy="50%"
+                labelLine={false}
+                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                outerRadius={80}
+                fill="#8884d8"
+                dataKey="value"
+              >
+                {statusChartData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.color} />
+                ))}
+              </Pie>
+              <Tooltip />
+              <Legend />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
+          <h2 className="text-md font-semibold text-gray-800 mb-3 flex items-center gap-2">
+            <AlertCircle size={18} /> Risk Distribution
+          </h2>
+          <ResponsiveContainer width="100%" height={260}>
+            <PieChart>
+              <Pie
+                data={riskChartData}
+                cx="50%"
+                cy="50%"
+                labelLine={false}
+                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                outerRadius={80}
+                fill="#8884d8"
+                dataKey="value"
+              >
+                {riskChartData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.color} />
+                ))}
+              </Pie>
+              <Tooltip />
+              <Legend />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* FILTERS - Compact */}
+      <div className="bg-white rounded-xl shadow-sm p-3 mb-4 border border-gray-100">
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="relative flex-1 min-w-[180px]">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+            <input
+              className="pl-9 pr-3 py-1.5 border border-gray-200 rounded-lg w-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Search..."
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
+          <select
+            className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            onChange={(e) => setFilterStatus(e.target.value)}
+            value={filterStatus}
+          >
+            <option value="all">All Status</option>
+            <option value="open">Open</option>
+            <option value="in-progress">In Progress</option>
+            <option value="resolved">Resolved</option>
+          </select>
+
+          <select
+            className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            onChange={(e) => setSortBy(e.target.value)}
+            value={sortBy}
+          >
+            <option value="date">Sort by Date</option>
+            <option value="status">Sort by Status</option>
+            <option value="risk">Sort by Risk</option>
+          </select>
+        </div>
+      </div>
+
+      {/* TABLE - Compact with all columns including Uptime/Downtime */}
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="p-3 text-left font-semibold text-gray-600">#</th>
+                <th className="p-3 text-left font-semibold text-gray-600">Date</th>
+                <th className="p-3 text-left font-semibold text-gray-600">Reported By</th>
+                <th className="p-3 text-left font-semibold text-gray-600">Assigned To</th>
+                <th className="p-3 text-left font-semibold text-gray-600">System</th>
+                <th className="p-3 text-left font-semibold text-gray-600">Problem</th>
+                <th className="p-3 text-left font-semibold text-gray-600">Down Time</th>
+                <th className="p-3 text-left font-semibold text-gray-600">Up Time</th>
+                <th className="p-3 text-left font-semibold text-gray-600">Risk</th>
+                <th className="p-3 text-left font-semibold text-gray-600">Status</th>
+                <th className="p-3 text-center font-semibold text-gray-600">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={11} className="p-8 text-center text-gray-400">
+                    <div className="flex flex-col items-center gap-2">
+                      <FileText size={32} />
+                      <p>No tickets found</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                filtered.map((t, i) => {
+                  const risk = riskConfig[t.riskLevel] || riskConfig.low;
+                  return (
+                    <tr key={t.id} className="border-b border-gray-100 hover:bg-gray-50 transition">
+                      <td className="p-3 text-gray-500">{i + 1}</td>
+                      <td className="p-3 text-gray-600 whitespace-nowrap">{t.date}</td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-1.5">
+                          <div className="h-6 w-6 bg-blue-100 rounded-full flex items-center justify-center">
+                            <User size={12} className="text-blue-600" />
+                          </div>
+                          <span className="font-medium text-gray-700">{t.reportedByName}</span>
+                        </div>
+                      </td>
+                      <td className="p-3 text-gray-600">{t.assignedToName || "-"}</td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-1.5">
+                          <Server size={12} className="text-gray-400" />
+                          <span className="text-gray-700">{t.systemName}</span>
+                        </div>
+                      </td>
+                      <td className="p-3 text-gray-600 max-w-[180px] truncate" title={t.problemDetails}>
+                        {t.problemDetails}
+                      </td>
+                      <td className="p-3 text-gray-500 text-xs whitespace-nowrap">
+                        {t.downTime ? (
+                          <div className="flex items-center gap-1">
+                            <Clock size={12} />
+                            {t.downTime}
+                          </div>
+                        ) : "-"}
+                      </td>
+                      <td className="p-3 text-gray-500 text-xs whitespace-nowrap">
+                        {t.upTime ? (
+                          <div className="flex items-center gap-1">
+                            <Clock size={12} />
+                            {t.upTime}
+                          </div>
+                        ) : "-"}
+                      </td>
+                      <td className="p-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${risk.color}`}>
+                          {risk.label}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-1.5">
+                          <div className={`h-1.5 w-1.5 rounded-full ${t.status === "open" ? "bg-red-500" : t.status === "in-progress" ? "bg-yellow-500" : "bg-green-500"}`} />
+                          <select
+                            value={t.status}
+                            onChange={(e) => {
+                              const updated = tickets.map(x =>
+                                x.id === t.id ? { ...x, status: e.target.value } : x
+                              );
+                              setTickets(updated);
+                              localStorage.setItem("cbcTickets", JSON.stringify(updated));
+                              notify("Status updated");
+                            }}
+                            className="text-xs border-0 bg-transparent focus:ring-1 focus:ring-blue-500 rounded cursor-pointer"
+                          >
+                            <option value="open">Open</option>
+                            <option value="in-progress">In Progress</option>
+                            <option value="resolved">Resolved</option>
+                          </select>
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            className="p-1 text-blue-600 hover:bg-blue-50 rounded transition"
+                            onClick={() => {
+                              setSelectedTicket(t);
+                              setEditTicket({ ...t });
+                            }}
+                          >
+                            <Edit size={14} />
+                          </button>
+                          <button
+                            className="p-1 text-red-600 hover:bg-red-50 rounded transition"
+                            onClick={() => confirmDelete(t.id)}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* EDIT MODAL - Compact */}
+      {selectedTicket && editTicket && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl">
+            <div className="flex justify-between items-center p-4 border-b border-gray-100">
+              <h2 className="text-lg font-semibold text-gray-800">Edit Ticket</h2>
+              <button
+                onClick={() => setSelectedTicket(null)}
+                className="p-1 hover:bg-gray-100 rounded transition"
+              >
+                <X size={18} className="text-gray-500" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto max-h-[calc(90vh-120px)]">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">System Name</label>
+                  <input
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={editTicket.systemName || ""}
+                    onChange={(e) => updateField("systemName", e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                  <input
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={editTicket.department || ""}
+                    onChange={(e) => updateField("department", e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Branch</label>
+                  <input
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={editTicket.branch || ""}
+                    onChange={(e) => updateField("branch", e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Affected User</label>
+                  <input
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={editTicket.affectedUser || ""}
+                    onChange={(e) => updateField("affectedUser", e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Risk Level</label>
+                  <select
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={editTicket.riskLevel || "low"}
+                    onChange={(e) => updateField("riskLevel", e.target.value)}
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Down Time</label>
+                  <div className="flex gap-2">
+                    <input
+                      className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={editTicket.downTime || ""}
+                      onChange={(e) => updateField("downTime", e.target.value)}
+                      placeholder="Select or click clock"
+                    />
+                    <button
+                      onClick={() => setClock("downTime")}
+                      className="px-3 bg-gray-100 rounded-lg hover:bg-gray-200 transition text-sm"
+                    >
+                      Clock
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Up Time</label>
+                  <div className="flex gap-2">
+                    <input
+                      className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={editTicket.upTime || ""}
+                      onChange={(e) => updateField("upTime", e.target.value)}
+                      placeholder="Select or click clock"
+                    />
+                    <button
+                      onClick={() => setClock("upTime")}
+                      className="px-3 bg-gray-100 rounded-lg hover:bg-gray-200 transition text-sm"
+                    >
+                      Clock
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Problem Details</label>
+                <textarea
+                  rows={3}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={editTicket.problemDetails || ""}
+                  onChange={(e) => updateField("problemDetails", e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center p-4 border-t border-gray-100 bg-gray-50">
+              <button
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition text-sm"
+                onClick={() => {
+                  setSelectedTicket(null);
+                  confirmDelete(editTicket.id);
+                }}
+              >
+                <Trash2 size={14} />
+                Delete
+              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setSelectedTicket(null)}
+                  className="px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveTicket}
+                  className="px-3 py-1.5 bg-gradient-to-r from-green-600 to-green-500 text-white rounded-lg hover:shadow-lg transition text-sm"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes slide-in {
+          from {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+        .animate-slide-in {
+          animation: slide-in 0.3s ease-out;
+        }
+      `}</style>
     </div>
   );
 }
