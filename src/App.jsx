@@ -15,7 +15,7 @@ import UserDashboard from "./pages/user/UserDashboard";
 import CreateTicket from "./pages/user/CreateTicket";
 
 // Admin Pages
-import AdminDashboard from "./pages/admin/AdminDashboard";
+import AdminDashboard from "./pages/Admin/AdminDashboard";
 import AdminTickets from "./pages/admin/AdminTickets";
 import AdminUsers from "./pages/admin/AdminUsers";
 
