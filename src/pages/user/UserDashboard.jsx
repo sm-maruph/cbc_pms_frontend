@@ -56,6 +56,8 @@ export default function UserDashboard({ user }) {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [editTicket, setEditTicket] = useState(null);
   const [deleteWarning, setDeleteWarning] = useState(null);
+  const [resolutionPopup, setResolutionPopup] = useState(null); // For resolution popup
+  const [resolutionData, setResolutionData] = useState({ rootCause: "", upTime: "" }); // Resolution form data
 
   const [notifications, setNotifications] = useState([]);
 
@@ -124,7 +126,54 @@ export default function UserDashboard({ user }) {
     setDeleteWarning(null);
   };
 
-  /* ENSURE TICKETS HAVE RISK LEVEL (DEFAULT TO LOW IF MISSING) */
+  /* HANDLE STATUS CHANGE WITH RESOLUTION POPUP */
+  const handleStatusChange = (ticket, newStatus) => {
+    if (newStatus === "resolved") {
+      // Show resolution popup
+      setResolutionPopup(ticket);
+      setResolutionData({ 
+        rootCause: ticket.rootCause || "", 
+        upTime: ticket.upTime || "" 
+      });
+    } else {
+      // Direct status update for non-resolved statuses
+      const updated = tickets.map(x =>
+        x.id === ticket.id ? { ...x, status: newStatus } : x
+      );
+      setTickets(updated);
+      localStorage.setItem("cbcTickets", JSON.stringify(updated));
+      notify("Status updated");
+    }
+  };
+
+  /* CONFIRM RESOLUTION */
+  const confirmResolution = () => {
+    const updated = tickets.map(x =>
+      x.id === resolutionPopup.id 
+        ? { 
+            ...x, 
+            status: "resolved", 
+            rootCause: resolutionData.rootCause,
+            upTime: resolutionData.upTime
+          } 
+        : x
+    );
+    setTickets(updated);
+    localStorage.setItem("cbcTickets", JSON.stringify(updated));
+    notify("Ticket resolved successfully");
+    setResolutionPopup(null);
+    setResolutionData({ rootCause: "", upTime: "" });
+  };
+
+  /* SET UP TIME TO NOW */
+  const setUpTimeNow = () => {
+    setResolutionData(prev => ({
+      ...prev,
+      upTime: new Date().toLocaleString()
+    }));
+  };
+
+  /* ENSURE TICKETS HAVE RISK LEVEL */
   useEffect(() => {
     let needsUpdate = false;
     const updatedTickets = tickets.map(ticket => {
@@ -201,6 +250,77 @@ export default function UserDashboard({ user }) {
           </div>
         ))}
       </div>
+
+      {/* RESOLUTION POPUP */}
+      {resolutionPopup && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-12 w-12 bg-green-100 rounded-full flex items-center justify-center">
+                <CheckCircle size={24} className="text-green-600" />
+              </div>
+              <div>
+                <h3 className="text-xl font-semibold text-gray-800">Resolve Ticket</h3>
+                <p className="text-sm text-gray-500">#{resolutionPopup.id} - {resolutionPopup.systemName}</p>
+              </div>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Root Cause <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                  placeholder="Describe the root cause of the issue..."
+                  value={resolutionData.rootCause}
+                  onChange={(e) => setResolutionData(prev => ({ ...prev, rootCause: e.target.value }))}
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Up Time <span className="text-red-500">*</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                    placeholder="Select date/time or click Now"
+                    value={resolutionData.upTime}
+                    onChange={(e) => setResolutionData(prev => ({ ...prev, upTime: e.target.value }))}
+                    required
+                  />
+                  <button
+                    onClick={setUpTimeNow}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2 text-sm font-medium"
+                  >
+                    <Clock size={16} />
+                    Now
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end mt-6">
+              <button
+                onClick={() => setResolutionPopup(null)}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmResolution}
+                disabled={!resolutionData.rootCause || !resolutionData.upTime}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Confirm Resolution
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* DELETE WARNING MODAL */}
       {deleteWarning && (
@@ -470,14 +590,7 @@ export default function UserDashboard({ user }) {
                           <div className={`h-1.5 w-1.5 rounded-full ${t.status === "open" ? "bg-red-500" : t.status === "in-progress" ? "bg-yellow-500" : "bg-green-500"}`} />
                           <select
                             value={t.status}
-                            onChange={(e) => {
-                              const updated = tickets.map(x =>
-                                x.id === t.id ? { ...x, status: e.target.value } : x
-                              );
-                              setTickets(updated);
-                              localStorage.setItem("cbcTickets", JSON.stringify(updated));
-                              notify("Status updated");
-                            }}
+                            onChange={(e) => handleStatusChange(t, e.target.value)}
                             className="text-xs border-0 bg-transparent focus:ring-1 focus:ring-blue-500 rounded cursor-pointer"
                           >
                             <option value="open">Open</option>

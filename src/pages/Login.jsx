@@ -8,9 +8,9 @@ export default function Login({ onLogin }) {
   const [error, setError] = useState("");
 
   const demoUsers = {
-    "admin@cbc.com": { password: "admin123", role: "admin", name: "Admin User" },
-    "user@cbc.com": { password: "user123", role: "user", name: "John Doe" },
-    "user2@cbc.com": { password: "user123", role: "user", name: "Jane Smith" },
+    "admin@cbc.com": { password: "admin123", role: "admin", name: "CITO" },
+    "user@cbc.com": { password: "user123", role: "user", name: "S.M. Maruph" },
+    "user2@cbc.com": { password: "user123", role: "user", name: "Tanim Mahmud" },
   };
 
   const handleSubmit = async (e) => {
