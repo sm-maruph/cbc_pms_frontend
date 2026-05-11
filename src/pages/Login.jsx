@@ -7,11 +7,7 @@ export default function Login({ onLogin }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const demoUsers = {
-    "admin@cbc.com": { password: "admin123", role: "admin", name: "CITO" },
-    "user@cbc.com": { password: "user123", role: "user", name: "S.M. Maruph" },
-    "user2@cbc.com": { password: "user123", role: "user", name: "Tanim Mahmud" },
-  };
+  const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -19,27 +15,24 @@ export default function Login({ onLogin }) {
     setLoading(true);
 
     try {
-      if (demoUsers[email] && demoUsers[email].password === password) {
-        const demoUser = demoUsers[email];
-        onLogin({
-          id: Math.random().toString(36).substr(2, 9),
-          email,
-          name: demoUser.name,
-          role: demoUser.role,
-          department: demoUser.role === "admin" ? "IT Management" : "Operations",
-          branch: demoUser.role === "admin" ? "Head Office" : "Colombo Branch",
-        });
-        return;
-      }
+      const response = await fetch(`${API_BASE}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Invalid credentials");
 
-      setError("Invalid email or password");
+      const { token, user } = data;
+      localStorage.setItem("cbcToken", token);
+      localStorage.setItem("cbcUser", JSON.stringify(user));
+      onLogin(user);
     } catch (err) {
-      setError("Something went wrong");
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   };
-
   return (
     <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden
       bg-gradient-to-br from-green-500 via-blue-600 to-blue-900">
@@ -129,7 +122,7 @@ export default function Login({ onLogin }) {
           </button>
         </form>
 
-        {/* DEMO */}
+        {/* DEMO INFO – kept as reference */}
         <div className="mt-8 border-t border-white/20 pt-5 text-xs text-white/80">
           <p className="font-semibold mb-2">Demo:</p>
           <p>Admin: admin@cbc.com / admin123</p>

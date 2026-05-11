@@ -9,6 +9,9 @@ import {
   Layers, ChevronLeft, ChevronRight, Menu, MapPin, Cpu
 } from "lucide-react";
 
+// Import the API function
+import { createTicket } from "../../services/api";
+
 const defaultUsers = [
   { email: "cito@cbc.com", name: "CITO" },
   { email: "tanim@cbc.com", name: "Tanim Mahmud" },
@@ -263,8 +266,9 @@ export default function CreateTicket({ user }) {
     return saved ? JSON.parse(saved) : ["template-1", "template-4", "template-6"];
   });
 
+
   // Initialize downtime with current date and time
-  const getCurrentDateTime = () => {
+ const getCurrentDateTime = () => {
     const now = new Date();
     return now.toLocaleString('en-US', { 
       year: 'numeric',
@@ -277,7 +281,7 @@ export default function CreateTicket({ user }) {
     });
   };
 
-  const [formData, setFormData] = useState({
+   const [formData, setFormData] = useState({
     affectedUser: "",
     assignedTo: "",
     systemName: "",
@@ -289,6 +293,7 @@ export default function CreateTicket({ user }) {
     date: new Date().toISOString().split("T")[0],
     downTime: getCurrentDateTime(),
   });
+
 
   const [systemOptions, setSystemOptions] = useState(() => {
     const stored = localStorage.getItem("cbcSystems");
@@ -423,82 +428,73 @@ export default function CreateTicket({ user }) {
   const favoriteTemplates = quickTemplates.filter(t => favorites.includes(t.id));
   const otherTemplates = filteredTemplates.filter(t => !favorites.includes(t.id));
 
-  const handleSubmit = async (e) => {
+    const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
+    // Validation (unchanged)
+    if (!formData.systemName.trim()) {
+      setError("System Name is required");
+      setLoading(false);
+      return;
+    }
+    if (!formData.problemDetails.trim()) {
+      setError("Problem Details are required");
+      setLoading(false);
+      return;
+    }
+    if (!formData.department) {
+      setError("Department is required");
+      setLoading(false);
+      return;
+    }
+    if (!formData.branch) {
+      setError("Branch is required");
+      setLoading(false);
+      return;
+    }
+    if (!formData.affectedUser.trim()) {
+      setError("Affected User is required");
+      setLoading(false);
+      return;
+    }
+
+    const token = localStorage.getItem("cbcToken");
+    if (!token) {
+      setError("You are not logged in. Please log in again.");
+      setLoading(false);
+      return;
+    }
+
+    // Build the payload matching your backend schema
+    const ticketData = {
+      date: formData.date,
+      systemName: formData.systemName,
+      problemDetails: formData.problemDetails,
+      department: formData.department,
+      branch: formData.branch,
+      riskLabel: formData.riskLabel,
+      affectedUser: formData.affectedUser,
+      assignedToEmail: formData.assignedTo || null,
+      pcName: formData.pcName || "",
+      downTime: formData.downTime,
+      // reportedByEmail will be taken from the JWT token by the backend
+    };
+
     try {
-      if (!formData.systemName.trim()) {
-        setError("System Name is required");
-        setLoading(false);
-        return;
-      }
-      if (!formData.problemDetails.trim()) {
-        setError("Problem Details are required");
-        setLoading(false);
-        return;
-      }
-      if (!formData.department) {
-        setError("Department is required");
-        setLoading(false);
-        return;
-      }
-      if (!formData.branch) {
-        setError("Branch is required");
-        setLoading(false);
-        return;
-      }
-      if (!formData.affectedUser.trim()) {
-        setError("Affected User is required");
-        setLoading(false);
-        return;
-      }
-
-      const assignee = availableUsers.find((u) => u.email === formData.assignedTo) || null;
-
-      const newTicket = {
-        id: Math.random().toString(36).substr(2, 9),
-        sl: Math.floor(Math.random() * 9000) + 1000,
-        date: formData.date,
-        month: new Date(formData.date).toLocaleString("default", { month: "long" }),
-        reportedBy: user.email,
-        reportedByName: user.name,
-        affectedUser: formData.affectedUser,
-        assignedToEmail: assignee?.email || "",
-        assignedToName: assignee?.name || "",
-        systemName: formData.systemName,
-        problemDetails: formData.problemDetails,
-        department: formData.department,
-        branch: formData.branch,
-        riskLabel: formData.riskLabel,
-        pcName: formData.pcName,
-        resolution: "",
-        upTime: "",
-        downTime: formData.downTime,
-        remarks: "",
-        remarksByAdmin: "",
-        specialInstruction: "",
-        status: "open",
-        riskLevel: formData.riskLabel.toLowerCase(),
-        createdAt: new Date().toISOString(),
-      };
-
-      const existingTickets = localStorage.getItem("cbcTickets");
-      const tickets = existingTickets ? JSON.parse(existingTickets) : [];
-      tickets.push(newTicket);
-      localStorage.setItem("cbcTickets", JSON.stringify(tickets));
-
+      await createTicket(ticketData, token);
       setSuccess(true);
       setTimeout(() => {
         navigate("/dashboard");
       }, 1500);
     } catch (err) {
-      setError("An error occurred. Please try again.");
-    } finally {
+      console.error("Ticket creation error:", err);
+      setError(err.message || "An error occurred. Please try again.");
       setLoading(false);
     }
   };
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">

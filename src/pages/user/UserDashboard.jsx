@@ -10,7 +10,10 @@ import {
   Activity, TrendingUp, FileText, Zap, AlertTriangle
 } from "lucide-react";
 
-/* USERS */
+// Import API functions
+import { getTickets, updateTicket, deleteTicket } from "../../services/api";
+
+/* USERS (for assignee names – kept as is) */
 const defaultUsers = [
   { email: "jahidul@cbc.com", name: "Jahidul Balat" },
   { email: "sifat@cbc.com", name: "Sifat Nur Billah" },
@@ -56,116 +59,169 @@ export default function UserDashboard({ user }) {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [editTicket, setEditTicket] = useState(null);
   const [deleteWarning, setDeleteWarning] = useState(null);
-  const [resolutionPopup, setResolutionPopup] = useState(null); // For resolution popup
-  const [resolutionData, setResolutionData] = useState({ rootCause: "", upTime: "" }); // Resolution form data
+  const [resolutionPopup, setResolutionPopup] = useState(null);
+  const [resolutionData, setResolutionData] = useState({ rootCause: "", upTime: "" });
 
   const [notifications, setNotifications] = useState([]);
 
-  /* LOAD */
-  useEffect(() => {
-    const stored = JSON.parse(localStorage.getItem("cbcTickets") || "[]");
-    setTickets(stored);
-  }, []);
+  const token = localStorage.getItem("cbcToken");
+  console.log("UserDashboard mounted with token:", token);
 
-  /* NOTIFY */
+  // Helper: convert API ticket object to local format (preserves all expected fields)
+  const formatTicket = (apiTicket) => ({
+    ...apiTicket,
+    id: apiTicket.id.toString(),
+    riskLevel: apiTicket.risk_label ? apiTicket.risk_label.toLowerCase() : "low",
+    reportedByName: apiTicket.reportedByName || "",
+    assignedToName: apiTicket.assigned_to_name
+      ? (defaultUsers.find(u => u.email === apiTicket.assigned_to_name)?.name || apiTicket.assigned_to_name)
+      : "",
+    downTime: apiTicket.down_time ? new Date(apiTicket.down_time).toLocaleString() : "",
+    upTime: apiTicket.up_time ? new Date(apiTicket.up_time).toLocaleString() : "",
+    date: apiTicket.date ? new Date(apiTicket.date).toISOString().split("T")[0] : "",
+  });
+
+  // Fetch tickets from API
+  const fetchTickets = async () => {
+    if (!token) {
+      notify("Not authenticated", "error");
+      return;
+    }
+    try {
+      console.log("Fetching tickets with token:", token.slice(0, 20) + "...");
+      const data = await getTickets(token);
+      console.log("Raw API response:", data);
+      setTickets(data.map(formatTicket));
+    } catch (err) {
+      notify("Failed to load tickets", "error");
+      console.error(err);
+    }
+  };
+
+  // useEffect(() => {
+  //   fetchTickets();
+  // }, []); // runs once on mount
+
+
+
+  useEffect(() => {
+    const fetchTickets = async () => {
+        if (!token) {
+            console.log("No token, skipping fetch");
+            return;
+        }
+        try {
+            const data = await getTickets(token);
+            console.log("Tickets received:", data);
+            setTickets(data.map(formatTicket));
+        } catch (err) {
+            notify("Failed to load tickets", "error");
+            console.error(err);
+        }
+    };
+    fetchTickets();
+}, [token]); // re‑fetch when token changes
+
+  // Notification helper (unchanged)
   const notify = (msg, type = "success") => {
     const id = Date.now();
     setNotifications((prev) => [...prev, { id, msg, type }]);
-
     setTimeout(() => {
       setNotifications((prev) => prev.filter((n) => n.id !== id));
     }, 3000);
   };
 
-  /* SYNC */
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const stored = JSON.parse(localStorage.getItem("cbcTickets") || "[]");
-      setTickets(stored);
-    }, 3000);
-    return () => clearInterval(interval);
-  }, []);
-
-  /* UPDATE FIELD */
+  // Update field in edit modal
   const updateField = (field, value) => {
     setEditTicket((prev) => ({ ...prev, [field]: value }));
   };
 
-  /* CLOCK */
   const setClock = (field) => {
     updateField(field, new Date().toLocaleString());
   };
 
-  /* SAVE */
-  const saveTicket = () => {
-    const updated = tickets.map((t) =>
-      t.id === editTicket.id ? editTicket : t
-    );
+  // Save edited ticket – send only changed fields to API
+  const saveTicket = async () => {
+    if (!editTicket) return;
+    try {
+      const payload = {};
+      if (editTicket.systemName !== undefined) payload.system_name = editTicket.systemName;
+      if (editTicket.department !== undefined) payload.department = editTicket.department;
+      if (editTicket.branch !== undefined) payload.branch = editTicket.branch;
+      if (editTicket.affectedUser !== undefined) payload.affected_user = editTicket.affectedUser;
+      if (editTicket.riskLevel !== undefined) payload.risk_label = editTicket.riskLevel.toUpperCase();
+      if (editTicket.downTime !== undefined) payload.down_time = editTicket.downTime;
+      if (editTicket.upTime !== undefined) payload.up_time = editTicket.upTime;
+      if (editTicket.problemDetails !== undefined) payload.problem_details = editTicket.problemDetails;
 
-    setTickets(updated);
-    localStorage.setItem("cbcTickets", JSON.stringify(updated));
-
-    notify("Ticket updated successfully");
-    setSelectedTicket(null);
-    setEditTicket(null);
+      await updateTicket(editTicket.id, payload, token);
+      notify("Ticket updated successfully");
+      setSelectedTicket(null);
+      setEditTicket(null);
+      fetchTickets(); // refresh list
+    } catch (err) {
+      notify("Update failed", "error");
+    }
   };
 
-  /* DELETE WITH WARNING */
   const confirmDelete = (id) => {
     setDeleteWarning(id);
   };
 
-  const handleDelete = (id) => {
-    const updated = tickets.filter((t) => t.id !== id);
-    setTickets(updated);
-    localStorage.setItem("cbcTickets", JSON.stringify(updated));
-
-    notify("Ticket deleted successfully");
-    setSelectedTicket(null);
-    setEditTicket(null);
-    setDeleteWarning(null);
-  };
-
-  /* HANDLE STATUS CHANGE WITH RESOLUTION POPUP */
-  const handleStatusChange = (ticket, newStatus) => {
-    if (newStatus === "resolved") {
-      // Show resolution popup
-      setResolutionPopup(ticket);
-      setResolutionData({ 
-        rootCause: ticket.rootCause || "", 
-        upTime: ticket.upTime || "" 
-      });
-    } else {
-      // Direct status update for non-resolved statuses
-      const updated = tickets.map(x =>
-        x.id === ticket.id ? { ...x, status: newStatus } : x
-      );
-      setTickets(updated);
-      localStorage.setItem("cbcTickets", JSON.stringify(updated));
-      notify("Status updated");
+  const handleDelete = async (id) => {
+    try {
+      await deleteTicket(id, token);
+      notify("Ticket deleted successfully");
+      setSelectedTicket(null);
+      setEditTicket(null);
+      setDeleteWarning(null);
+      fetchTickets();
+    } catch (err) {
+      notify("Delete failed", "error");
     }
   };
 
-  /* CONFIRM RESOLUTION */
-  const confirmResolution = () => {
-    const updated = tickets.map(x =>
-      x.id === resolutionPopup.id 
-        ? { 
-            ...x, 
-            status: "resolved", 
-            rootCause: resolutionData.rootCause,
-            upTime: resolutionData.upTime
-          } 
-        : x
-    );
-    setTickets(updated);
-    localStorage.setItem("cbcTickets", JSON.stringify(updated));
-    notify("Ticket resolved successfully");
-    setResolutionPopup(null);
-    setResolutionData({ rootCause: "", upTime: "" });
+  // Helper to update just status (without popup) for non‑resolved transitions
+  const updateTicketStatus = async (id, newStatus) => {
+    try {
+      await updateTicket(id, { status: newStatus }, token);
+      notify("Status updated");
+      fetchTickets();
+    } catch (err) {
+      notify("Status update failed", "error");
+    }
   };
 
-  /* SET UP TIME TO NOW */
+  // Status change handler – shows resolution popup only when moving to "resolved"
+  const handleStatusChange = (ticket, newStatus) => {
+    if (newStatus === "resolved") {
+      setResolutionPopup(ticket);
+      setResolutionData({
+        rootCause: ticket.rootCause || "",
+        upTime: ticket.upTime || ""
+      });
+    } else {
+      updateTicketStatus(ticket.id, newStatus);
+    }
+  };
+
+  // Confirm resolution with root cause and up time
+  const confirmResolution = async () => {
+    try {
+      await updateTicket(resolutionPopup.id, {
+        status: "resolved",
+        root_cause: resolutionData.rootCause,
+        up_time: resolutionData.upTime,
+      }, token);
+      notify("Ticket resolved successfully");
+      setResolutionPopup(null);
+      setResolutionData({ rootCause: "", upTime: "" });
+      fetchTickets();
+    } catch (err) {
+      notify("Resolution failed", "error");
+    }
+  };
+
   const setUpTimeNow = () => {
     setResolutionData(prev => ({
       ...prev,
@@ -173,23 +229,18 @@ export default function UserDashboard({ user }) {
     }));
   };
 
-  /* ENSURE TICKETS HAVE RISK LEVEL */
-  useEffect(() => {
-    let needsUpdate = false;
-    const updatedTickets = tickets.map(ticket => {
-      if (!ticket.riskLevel) {
-        needsUpdate = true;
-        return { ...ticket, riskLevel: "low" };
-      }
-      return ticket;
-    });
-    if (needsUpdate) {
-      setTickets(updatedTickets);
-      localStorage.setItem("cbcTickets", JSON.stringify(updatedTickets));
-    }
+  // Stats derived from tickets (replaces old localStorage stats)
+  const stats = useMemo(() => {
+    const open = tickets.filter(t => t.status === "open").length;
+    const progress = tickets.filter(t => t.status === "in-progress").length;
+    const resolved = tickets.filter(t => t.status === "resolved").length;
+    const highRisk = tickets.filter(t => t.riskLevel === "high").length;
+    const mediumRisk = tickets.filter(t => t.riskLevel === "medium").length;
+    const lowRisk = tickets.filter(t => t.riskLevel === "low").length;
+    return { open, progress, resolved, total: tickets.length, highRisk, mediumRisk, lowRisk };
   }, [tickets]);
 
-  /* FILTER */
+  // Filtered and sorted tickets
   const filtered = useMemo(() => {
     return tickets
       .filter((t) => filterStatus === "all" || t.status === filterStatus)
@@ -209,18 +260,6 @@ export default function UserDashboard({ user }) {
       });
   }, [tickets, search, filterStatus, sortBy]);
 
-  /* STATS */
-  const stats = useMemo(() => {
-    const open = tickets.filter(t => t.status === "open").length;
-    const progress = tickets.filter(t => t.status === "in-progress").length;
-    const resolved = tickets.filter(t => t.status === "resolved").length;
-    const highRisk = tickets.filter(t => t.riskLevel === "high").length;
-    const mediumRisk = tickets.filter(t => t.riskLevel === "medium").length;
-    const lowRisk = tickets.filter(t => t.riskLevel === "low").length;
-    return { open, progress, resolved, total: tickets.length, highRisk, mediumRisk, lowRisk };
-  }, [tickets]);
-
-  /* CHART DATA */
   const statusChartData = [
     { name: "Open", value: stats.open, color: COLORS.open },
     { name: "In Progress", value: stats.progress, color: COLORS["in-progress"] },
@@ -233,6 +272,17 @@ export default function UserDashboard({ user }) {
     { name: "High Risk", value: stats.highRisk, color: COLORS.high },
   ].filter(item => item.value > 0);
 
+  // Ensure riskLevel exists for all tickets (fallback)
+  useEffect(() => {
+    if (tickets.some(t => !t.riskLevel)) {
+      const fixed = tickets.map(t => ({ ...t, riskLevel: t.riskLevel || "low" }));
+      setTickets(fixed);
+    }
+  }, [tickets]);
+
+  // ----------------------------------------------------------------------
+  // JSX – exactly the same as your original, no design changes
+  // ----------------------------------------------------------------------
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-4 md:p-6">
 
@@ -372,7 +422,7 @@ export default function UserDashboard({ user }) {
         </div>
       </div>
 
-      {/* STATS CARDS - Compact */}
+      {/* STATS CARDS */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <div className="bg-white rounded-xl shadow-sm p-3 border border-gray-100">
           <div className="flex items-center justify-between">
@@ -475,7 +525,7 @@ export default function UserDashboard({ user }) {
         </div>
       </div>
 
-      {/* FILTERS - Compact */}
+      {/* FILTERS */}
       <div className="bg-white rounded-xl shadow-sm p-3 mb-4 border border-gray-100">
         <div className="flex flex-wrap gap-2 items-center">
           <div className="relative flex-1 min-w-[180px]">
@@ -510,7 +560,7 @@ export default function UserDashboard({ user }) {
         </div>
       </div>
 
-      {/* TABLE - Compact with all columns including Uptime/Downtime */}
+      {/* TABLE */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -553,17 +603,17 @@ export default function UserDashboard({ user }) {
                           </div>
                           <span className="font-medium text-gray-700">{t.reportedByName}</span>
                         </div>
-                      </td>
+                       </td>
                       <td className="p-3 text-gray-600">{t.assignedToName || "-"}</td>
                       <td className="p-3">
                         <div className="flex items-center gap-1.5">
                           <Server size={12} className="text-gray-400" />
                           <span className="text-gray-700">{t.systemName}</span>
                         </div>
-                      </td>
+                       </td>
                       <td className="p-3 text-gray-600 max-w-[180px] truncate" title={t.problemDetails}>
                         {t.problemDetails}
-                      </td>
+                       </td>
                       <td className="p-3 text-gray-500 text-xs whitespace-nowrap">
                         {t.downTime ? (
                           <div className="flex items-center gap-1">
@@ -571,7 +621,7 @@ export default function UserDashboard({ user }) {
                             {t.downTime}
                           </div>
                         ) : "-"}
-                      </td>
+                       </td>
                       <td className="p-3 text-gray-500 text-xs whitespace-nowrap">
                         {t.upTime ? (
                           <div className="flex items-center gap-1">
@@ -579,12 +629,12 @@ export default function UserDashboard({ user }) {
                             {t.upTime}
                           </div>
                         ) : "-"}
-                      </td>
+                       </td>
                       <td className="p-3">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${risk.color}`}>
                           {risk.label}
                         </span>
-                      </td>
+                       </td>
                       <td className="p-3">
                         <div className="flex items-center gap-1.5">
                           <div className={`h-1.5 w-1.5 rounded-full ${t.status === "open" ? "bg-red-500" : t.status === "in-progress" ? "bg-yellow-500" : "bg-green-500"}`} />
@@ -598,7 +648,7 @@ export default function UserDashboard({ user }) {
                             <option value="resolved">Resolved</option>
                           </select>
                         </div>
-                      </td>
+                       </td>
                       <td className="p-3">
                         <div className="flex items-center justify-center gap-1.5">
                           <button
@@ -617,7 +667,7 @@ export default function UserDashboard({ user }) {
                             <Trash2 size={14} />
                           </button>
                         </div>
-                      </td>
+                       </td>
                     </tr>
                   );
                 })
@@ -627,7 +677,7 @@ export default function UserDashboard({ user }) {
         </div>
       </div>
 
-      {/* EDIT MODAL - Compact */}
+      {/* EDIT MODAL */}
       {selectedTicket && editTicket && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl">
@@ -782,3 +832,5 @@ export default function UserDashboard({ user }) {
     </div>
   );
 }
+
+

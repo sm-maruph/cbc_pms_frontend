@@ -24,7 +24,6 @@ import AdminReport from "./pages/admin/AdminReport";
 
 // Shared Components
 import Navbar from "./components/navbar/Navbar";
-import Footer from "./components/Footer";
 import ScrollToTop from "./components/ScrollToTop";
 
 function AppWrapper() {
