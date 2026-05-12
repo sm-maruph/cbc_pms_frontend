@@ -20,7 +20,7 @@ import Report from "./pages/user/Report";
 import AdminDashboard from "./pages/Admin/AdminDashboard";
 import AdminTickets from "./pages/Admin/AdminTickets";
 import AdminUsers from "./pages/Admin/AdminUsers";
-import AdminReport from "./pages/admin/AdminReport";
+import AdminReport from "./pages/Admin/AdminReport";
 
 // Shared Components
 import Navbar from "./components/navbar/Navbar";
