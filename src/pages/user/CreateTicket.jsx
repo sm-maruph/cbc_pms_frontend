@@ -9,25 +9,33 @@ import {
   Layers, ChevronLeft, ChevronRight, Menu, MapPin, Cpu
 } from "lucide-react";
 
-// Import the API function
-import { createTicket } from "../../services/api";
+// Import API functions
+import { 
+  createTicket, 
+  getSystems, 
+  getDepartments, 
+  getBranches, 
+  getTemplates, 
+  getUserFavorites, 
+  toggleFavorite 
+} from "../../services/api";
 
-const defaultUsers = [
-  { email: "cito@cbc.com", name: "CITO" },
-  { email: "tanim@cbc.com", name: "Tanim Mahmud" },
-  { email: "eazuddin@cbc.com", name: "Eaz Uddin" },
-  { email: "jahidul@cbc.com", name: "Jahidul Balat" },
-  { email: "supriya@cbc.com", name: "Supriya Das Gupta" },
-  { email: "sifat@cbc.com", name: "Sifat Nur Billah" },
-  { email: "salman@cbc.com", name: "Salman Ahmed" },
-  { email: "abubakar@cbc.com", name: "Abu Bakar Siddiq" },
-  { email: "shah@cbc.com", name: "Shah Mohammad Al Noor" },
-  { email: "sm.maruph@cbc.com", name: "S. M. Maruph" },
-  { email: "raiyan@cbc.com", name: "Raiyan" },
-  { email: "tudu@cbc.com", name: "Tudu" },
-];
+// Icon mapping for templates (database stores icon name as string)
+const iconMap = {
+  "Shield": Shield,
+  "Wifi": Wifi,
+  "Printer": Printer,
+  "Mail": Mail,
+  "Database": Database,
+  "Activity": Activity,
+  "Monitor": Monitor,
+  "Server": Server,
+  "CreditCard": CreditCard,
+  "Smartphone": Smartphone,
+  "FileText": FileText
+};
 
-// PC Name prefix to branch mapping
+// PC Name prefix to branch mapping (business rule, not static data)
 const pcBranchMapping = {
   "cbccor": "Corporate Branch",
   "cht": "Agrabad Branch",
@@ -54,202 +62,6 @@ const pcBranchMapping = {
   "hob": "Head Office BD",
 };
 
-// Templates extracted from the Excel data (actual issues from the log)
-const quickTemplates = [
-  {
-    id: "template-1",
-    name: "ICBS Access Denied",
-    icon: Shield,
-    color: "from-red-500 to-red-600",
-    bgColor: "bg-red-50",
-    textColor: "text-red-700",
-    category: "Access Issue",
-    data: {
-      systemName: "ICBS",
-      department: "Treasury Back Office",
-      problemDetails: "Access denied issue. User unable to login to ICBS system. Error message indicates session device limit reached or authentication failure.",
-      riskLabel: "HIGH",
-      affectedUser: "TBO officials",
-    }
-  },
-  {
-    id: "template-2",
-    name: "Branch Network Down",
-    icon: Wifi,
-    color: "from-orange-500 to-orange-600",
-    bgColor: "bg-orange-50",
-    textColor: "text-orange-700",
-    category: "Network Issue",
-    data: {
-      systemName: "Branch Network",
-      department: "Operations",
-      problemDetails: "Complete branch network outage. Users cannot connect to internal banking applications. Branch operations fully halted.",
-      riskLabel: "HIGH",
-      affectedUser: "Full Branch Users",
-    }
-  },
-  {
-    id: "template-3",
-    name: "T4S Printing Error",
-    icon: Printer,
-    color: "from-purple-500 to-purple-600",
-    bgColor: "bg-purple-50",
-    textColor: "text-purple-700",
-    category: "Printing Issue",
-    data: {
-      systemName: "T4S NEXUS",
-      department: "Customer Service",
-      problemDetails: "Unable to print from T4S system. Voucher prints were not coming out. CCB Error showing in the system.",
-      riskLabel: "MEDIUM",
-      affectedUser: "Cash Counter Users",
-    }
-  },
-  {
-    id: "template-4",
-    name: "Email Login Failure",
-    icon: Mail,
-    color: "from-blue-500 to-blue-600",
-    bgColor: "bg-blue-50",
-    textColor: "text-blue-700",
-    category: "Login Issue",
-    data: {
-      systemName: "Corporate Email",
-      department: "IT",
-      problemDetails: "Unable to login to email. 2-factor authentication not working or password sync issue. Cannot access critical communications.",
-      riskLabel: "HIGH",
-      affectedUser: "All Dept Users",
-    }
-  },
-  {
-    id: "template-5",
-    name: "BACH & BEFTN File Issue",
-    icon: Database,
-    color: "from-cyan-500 to-cyan-600",
-    bgColor: "bg-cyan-50",
-    textColor: "text-cyan-700",
-    category: "Clearing Issue",
-    data: {
-      systemName: "BACH & BEFTN",
-      department: "Central Clearing",
-      problemDetails: "Outward file NACK issue / ACK not received. Files not getting acknowledged by the system.",
-      riskLabel: "MEDIUM",
-      affectedUser: "Clearing Department",
-    }
-  },
-  {
-    id: "template-6",
-    name: "Profile Lock / AD Lock",
-    icon: Activity,
-    color: "from-yellow-500 to-yellow-600",
-    bgColor: "bg-yellow-50",
-    textColor: "text-yellow-700",
-    category: "AD Issue",
-    data: {
-      systemName: "Active Directory",
-      department: "Customer Service",
-      problemDetails: "User profile getting locked frequently. Unable to login to PC due to AD lock issue. Password needs reset.",
-      riskLabel: "MEDIUM",
-      affectedUser: "Branch Users",
-    }
-  },
-  {
-    id: "template-7",
-    name: "ICBS Session Device Limit",
-    icon: Monitor,
-    color: "from-indigo-500 to-indigo-600",
-    bgColor: "bg-indigo-50",
-    textColor: "text-indigo-700",
-    category: "Session Issue",
-    data: {
-      systemName: "ICBS Session",
-      department: "Customer Service",
-      problemDetails: "Reached session device limit. User cannot login to AS400 due to multiple active sessions.",
-      riskLabel: "MEDIUM",
-      affectedUser: "Branch User",
-    }
-  },
-  {
-    id: "template-8",
-    name: "Share Folder Access",
-    icon: Server,
-    color: "from-green-500 to-green-600",
-    bgColor: "bg-green-50",
-    textColor: "text-green-700",
-    category: "Access Issue",
-    data: {
-      systemName: "Share Folder",
-      department: "Customer Service",
-      problemDetails: "Unable to access share folder / network drive. Permission issue or security patch causing access denied.",
-      riskLabel: "LOW",
-      affectedUser: "Branch Staff",
-    }
-  },
-  {
-    id: "template-9",
-    name: "AMlock Login Issue",
-    icon: Shield,
-    color: "from-pink-500 to-pink-600",
-    bgColor: "bg-pink-50",
-    textColor: "text-pink-700",
-    category: "Login Issue",
-    data: {
-      systemName: "AMlock Profile Setup",
-      department: "Trade Finance",
-      problemDetails: "Unable to login to AMLOCK due to compatibility issue. Functions not showing after login.",
-      riskLabel: "LOW",
-      affectedUser: "Finance Users",
-    }
-  },
-  {
-    id: "template-10",
-    name: "Excel File Corruption",
-    icon: FileText,
-    color: "from-emerald-500 to-emerald-600",
-    bgColor: "bg-emerald-50",
-    textColor: "text-emerald-700",
-    category: "Application Issue",
-    data: {
-      systemName: "Microsoft Office",
-      department: "Finance & Accounts",
-      problemDetails: "Unable to open Excel files from D drive. File corrupted or security patch causing access issue.",
-      riskLabel: "MEDIUM",
-      affectedUser: "Accounts Department",
-    }
-  },
-  {
-    id: "template-11",
-    name: "ATM Out of Service",
-    icon: CreditCard,
-    color: "from-rose-500 to-rose-600",
-    bgColor: "bg-rose-50",
-    textColor: "text-rose-700",
-    category: "ATM Issue",
-    data: {
-      systemName: "ATM",
-      department: "ATM Operations",
-      problemDetails: "ATM showing blank screen / card reader error / cash dispenser error. Customers unable to withdraw cash.",
-      riskLabel: "HIGH",
-      affectedUser: "ATM Customers",
-    }
-  },
-  {
-    id: "template-12",
-    name: "Scanner Not Working",
-    icon: Smartphone,
-    color: "from-teal-500 to-teal-600",
-    bgColor: "bg-teal-50",
-    textColor: "text-teal-700",
-    category: "Hardware Issue",
-    data: {
-      systemName: "Scanner",
-      department: "Customer Service",
-      problemDetails: "Unable to scan cheques due to connectivity issue. Scanner not detected by the system.",
-      riskLabel: "MEDIUM",
-      affectedUser: "Clearing Staff",
-    }
-  }
-];
-
 export default function CreateTicket({ user }) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
@@ -261,14 +73,17 @@ export default function CreateTicket({ user }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [detectedBranch, setDetectedBranch] = useState(null);
-  const [favorites, setFavorites] = useState(() => {
-    const saved = localStorage.getItem("favoriteTemplates");
-    return saved ? JSON.parse(saved) : ["template-1", "template-4", "template-6"];
-  });
-
+  
+  // State for dynamic data from database
+  const [systemOptions, setSystemOptions] = useState([]);
+  const [departmentOptions, setDepartmentOptions] = useState([]);
+  const [branchOptions, setBranchOptions] = useState([]);
+  const [templatesList, setTemplatesList] = useState([]);
+  const [favorites, setFavorites] = useState([]);
+  const [dataLoading, setDataLoading] = useState(true);
 
   // Initialize downtime with current date and time
- const getCurrentDateTime = () => {
+  const getCurrentDateTime = () => {
     const now = new Date();
     return now.toLocaleString('en-US', { 
       year: 'numeric',
@@ -281,7 +96,7 @@ export default function CreateTicket({ user }) {
     });
   };
 
-   const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState({
     affectedUser: "",
     assignedTo: "",
     systemName: "",
@@ -294,46 +109,63 @@ export default function CreateTicket({ user }) {
     downTime: getCurrentDateTime(),
   });
 
+  // Fetch all static data from database
+  useEffect(() => {
+    const fetchStaticData = async () => {
+      setDataLoading(true);
+      try {
+        const [systems, departments, branches, templates] = await Promise.all([
+          getSystems(),
+          getDepartments(),
+          getBranches(),
+          getTemplates()
+        ]);
+        
+        setSystemOptions(systems);
+        setDepartmentOptions(departments);
+        setBranchOptions(branches);
+        setTemplatesList(templates);
+        
+        // Fetch user favorites if logged in
+        const token = localStorage.getItem("cbcToken");
+        if (token) {
+          try {
+            const userFavorites = await getUserFavorites(token);
+            setFavorites(userFavorites);
+          } catch (err) {
+            console.error("Error fetching favorites:", err);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching static data:", err);
+        setError("Failed to load form data. Please refresh the page.");
+      } finally {
+        setDataLoading(false);
+      }
+    };
+    
+    fetchStaticData();
+  }, []);
 
-  const [systemOptions, setSystemOptions] = useState(() => {
-    const stored = localStorage.getItem("cbcSystems");
-    const defaultSystems = ["ICBS", "T4S NEXUS", "BACH & BEFTN", "Email Server", "Core Banking", "ERP System", "Network", "ATM", "AMlock", "Active Directory", "Share Folder", "FX Portal", "LOS", "SWIFT", "EXIMBILL"];
-    return stored ? JSON.parse(stored) : defaultSystems;
-  });
-
-  const [departmentOptions, setDepartmentOptions] = useState(() => {
-    const stored = localStorage.getItem("cbcDepartments");
-    const defaultDepts = ["IT", "Finance & Accounts", "Operations", "HR", "Compliance", "Customer Service", "Trade Finance", "Treasury Back Office", "Treasury Front Office", "Central Clearing", "Corporate Banking", "Digital Banking", "ICC", "IRMD", "Credit Admin", "Branch Operations"];
-    return stored ? JSON.parse(stored) : defaultDepts;
-  });
-
-  const [branchOptions, setBranchOptions] = useState(() => {
-    const stored = localStorage.getItem("cbcBranches");
-    const defaultBranches = [
-      "Head Office BD",
-      "Corporate Branch",
-      "Agrabad Branch",
-      "Motijheel Branch",
-      "Dhanmondi Branch",
-      "Gulshan Branch",
-      "Mirpur Branch",
-      "Narayanganj Branch",
-      "Panthapath Branch",
-      "Sylhet Branch",
-      "Uttara Branch",
-      "Tejgaon Branch",
-      "SME Old Dhaka",
-      "SME Shantinagar",
-      "SME CDA Avenue",
-      "SME Pragati Sharani",
-      "SME Tongi",
-      "SME Jubli",
-      "US Embassy Sub Branch",
-      "CEPZ Sub Branch",
-      "DEPZ Sub Branch"
-    ];
-    return stored ? JSON.parse(stored) : defaultBranches;
-  });
+  // Transform templates from database to frontend format
+  const quickTemplates = useMemo(() => {
+    return templatesList.map(template => ({
+      id: template.id,
+      name: template.name,
+      icon: iconMap[template.icon_name] || Shield,
+      color: template.gradient_color,
+      bgColor: template.bg_color,
+      textColor: template.text_color,
+      category: template.category,
+      data: {
+        systemName: template.system_name,
+        department: template.department,
+        problemDetails: template.problem_details,
+        riskLabel: template.risk_label,
+        affectedUser: template.affected_user || "",
+      }
+    }));
+  }, [templatesList]);
 
   // Function to detect branch from PC name
   const detectBranchFromPC = (pcName) => {
@@ -344,7 +176,6 @@ export default function CreateTicket({ user }) {
 
     const cleanPCName = pcName.trim().toLowerCase();
     
-    // Try to match PC name prefixes (case insensitive)
     for (const [prefix, branch] of Object.entries(pcBranchMapping)) {
       if (cleanPCName.includes(prefix.toLowerCase())) {
         setDetectedBranch(branch);
@@ -353,7 +184,6 @@ export default function CreateTicket({ user }) {
       }
     }
     
-    // Default to Head Office BD if no match found
     setDetectedBranch("Head Office BD");
     setFormData(prev => ({ ...prev, branch: "Head Office BD" }));
   };
@@ -370,13 +200,8 @@ export default function CreateTicket({ user }) {
       });
     }
 
-    defaultUsers.forEach((u) => usersMap.set(u.email, u));
-    if (user?.email) {
-      usersMap.set(user.email, { email: user.email, name: user.name });
-    }
-
     return Array.from(usersMap.values());
-  }, [user]);
+  }, []);
 
   const riskLevels = ["LOW", "MEDIUM", "HIGH"];
 
@@ -387,7 +212,6 @@ export default function CreateTicket({ user }) {
       [name]: value,
     }));
 
-    // Auto-detect branch when PC name changes
     if (name === "pcName") {
       detectBranchFromPC(value);
     }
@@ -403,9 +227,7 @@ export default function CreateTicket({ user }) {
       riskLabel: template.data.riskLabel,
       affectedUser: template.data.affectedUser || prev.affectedUser,
     }));
-    // Close mobile sidebar if open
     setMobileSidebarOpen(false);
-    // Scroll to form on mobile
     if (window.innerWidth < 1024) {
       document.getElementById("ticket-form")?.scrollIntoView({ behavior: "smooth" });
     }
@@ -413,6 +235,22 @@ export default function CreateTicket({ user }) {
 
   const setCurrentTimeAsDownTime = () => {
     setFormData(prev => ({ ...prev, downTime: getCurrentDateTime() }));
+  };
+
+  const handleToggleFavorite = async (templateId) => {
+    const token = localStorage.getItem("cbcToken");
+    if (!token) return;
+    
+    try {
+      const result = await toggleFavorite(templateId, token);
+      if (result.isFavorite) {
+        setFavorites(prev => [...prev, templateId]);
+      } else {
+        setFavorites(prev => prev.filter(id => id !== templateId));
+      }
+    } catch (err) {
+      console.error("Error toggling favorite:", err);
+    }
   };
 
   const filteredTemplates = useMemo(() => {
@@ -423,17 +261,20 @@ export default function CreateTicket({ user }) {
       const matchesCategory = selectedCategory === "all" || template.category === selectedCategory;
       return matchesSearch && matchesCategory;
     });
-  }, [searchTemplate, selectedCategory]);
+  }, [quickTemplates, searchTemplate, selectedCategory]);
 
   const favoriteTemplates = quickTemplates.filter(t => favorites.includes(t.id));
   const otherTemplates = filteredTemplates.filter(t => !favorites.includes(t.id));
 
-    const handleSubmit = async (e) => {
+  const categories = useMemo(() => {
+    return [...new Set(quickTemplates.map(t => t.category))];
+  }, [quickTemplates]);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
-    // Validation (unchanged)
     if (!formData.systemName.trim()) {
       setError("System Name is required");
       setLoading(false);
@@ -467,7 +308,6 @@ export default function CreateTicket({ user }) {
       return;
     }
 
-    // Build the payload matching your backend schema
     const ticketData = {
       date: formData.date,
       systemName: formData.systemName,
@@ -479,7 +319,6 @@ export default function CreateTicket({ user }) {
       assignedToEmail: formData.assignedTo || null,
       pcName: formData.pcName || "",
       downTime: formData.downTime,
-      // reportedByEmail will be taken from the JWT token by the backend
     };
 
     try {
@@ -495,6 +334,16 @@ export default function CreateTicket({ user }) {
     }
   };
 
+  if (dataLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading form data...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
@@ -548,15 +397,10 @@ export default function CreateTicket({ user }) {
                 setSelectedCategory={setSelectedCategory}
                 favoriteTemplates={favoriteTemplates}
                 otherTemplates={otherTemplates}
+                categories={categories}
                 favorites={favorites}
                 onApplyTemplate={handleApplyTemplate}
-                onToggleFavorite={(id) => {
-                  setFavorites(prev => {
-                    const newFavs = prev.includes(id) ? prev.filter(fid => fid !== id) : [...prev, id];
-                    localStorage.setItem("favoriteTemplates", JSON.stringify(newFavs));
-                    return newFavs;
-                  });
-                }}
+                onToggleFavorite={handleToggleFavorite}
               />
             </div>
           </div>
@@ -565,7 +409,7 @@ export default function CreateTicket({ user }) {
 
       {/* Desktop Layout */}
       <div className="flex h-screen">
-        {/* Desktop Sidebar - 1/6 width */}
+        {/* Desktop Sidebar */}
         <div className={`hidden lg:block bg-white/80 backdrop-blur-sm border-r border-gray-200 shadow-xl transition-all duration-300 ${sidebarCollapsed ? 'w-16' : 'w-1/6 min-w-[280px]'}`}>
           {sidebarCollapsed ? (
             <div className="h-full flex flex-col items-center pt-6">
@@ -610,22 +454,17 @@ export default function CreateTicket({ user }) {
                   setSelectedCategory={setSelectedCategory}
                   favoriteTemplates={favoriteTemplates}
                   otherTemplates={otherTemplates}
+                  categories={categories}
                   favorites={favorites}
                   onApplyTemplate={handleApplyTemplate}
-                  onToggleFavorite={(id) => {
-                    setFavorites(prev => {
-                      const newFavs = prev.includes(id) ? prev.filter(fid => fid !== id) : [...prev, id];
-                      localStorage.setItem("favoriteTemplates", JSON.stringify(newFavs));
-                      return newFavs;
-                    });
-                  }}
+                  onToggleFavorite={handleToggleFavorite}
                 />
               </div>
             </div>
           )}
         </div>
 
-        {/* Main Content - 5/6 width */}
+        {/* Main Content */}
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-5xl mx-auto p-4 lg:p-8">
             {/* Desktop Header */}
@@ -803,7 +642,7 @@ export default function CreateTicket({ user }) {
                   </div>
                 </div>
 
-                {/* Row 4: Report Date, Risk Level & Down Time in one row */}
+                {/* Row 4: Report Date, Risk Level & Down Time */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-1.5">
                     <label className="block text-sm font-semibold text-gray-700 flex items-center gap-2">
@@ -923,9 +762,10 @@ export default function CreateTicket({ user }) {
 }
 
 // Template Sidebar Component
-function TemplateSidebar({ searchTemplate, setSearchTemplate, selectedCategory, setSelectedCategory, favoriteTemplates, otherTemplates, favorites, onApplyTemplate, onToggleFavorite }) {
-  const categories = [...new Set([...favoriteTemplates, ...otherTemplates].map(t => t.category))];
-
+function TemplateSidebar({ 
+  searchTemplate, setSearchTemplate, selectedCategory, setSelectedCategory, 
+  favoriteTemplates, otherTemplates, categories, favorites, onApplyTemplate, onToggleFavorite 
+}) {
   return (
     <div className="space-y-4">
       {/* Search */}
