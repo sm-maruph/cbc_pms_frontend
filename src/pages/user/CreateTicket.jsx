@@ -10,14 +10,14 @@ import {
 } from "lucide-react";
 
 // Import API functions
-import { 
-  createTicket, 
-  getSystems, 
-  getDepartments, 
-  getBranches, 
-  getTemplates, 
-  getUserFavorites, 
-  toggleFavorite 
+import {
+  createTicket,
+  getSystems,
+  getDepartments,
+  getBranches,
+  getTemplates,
+  getUserFavorites,
+  toggleFavorite
 } from "../../services/api";
 
 // Icon mapping for templates (database stores icon name as string)
@@ -73,7 +73,7 @@ export default function CreateTicket({ user }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [detectedBranch, setDetectedBranch] = useState(null);
-  
+
   // State for dynamic data from database
   const [systemOptions, setSystemOptions] = useState([]);
   const [departmentOptions, setDepartmentOptions] = useState([]);
@@ -85,14 +85,14 @@ export default function CreateTicket({ user }) {
   // Initialize downtime with current date and time
   const getCurrentDateTime = () => {
     const now = new Date();
-    return now.toLocaleString('en-US', { 
+    return now.toLocaleString('en-US', {
       year: 'numeric',
-      month: '2-digit', 
+      month: '2-digit',
       day: '2-digit',
-      hour: '2-digit', 
-      minute: '2-digit', 
+      hour: '2-digit',
+      minute: '2-digit',
       second: '2-digit',
-      hour12: true 
+      hour12: true
     });
   };
 
@@ -120,12 +120,12 @@ export default function CreateTicket({ user }) {
           getBranches(),
           getTemplates()
         ]);
-        
+
         setSystemOptions(systems);
         setDepartmentOptions(departments);
         setBranchOptions(branches);
         setTemplatesList(templates);
-        
+
         // Fetch user favorites if logged in
         const token = localStorage.getItem("cbcToken");
         if (token) {
@@ -143,7 +143,7 @@ export default function CreateTicket({ user }) {
         setDataLoading(false);
       }
     };
-    
+
     fetchStaticData();
   }, []);
 
@@ -175,7 +175,7 @@ export default function CreateTicket({ user }) {
     }
 
     const cleanPCName = pcName.trim().toLowerCase();
-    
+
     for (const [prefix, branch] of Object.entries(pcBranchMapping)) {
       if (cleanPCName.includes(prefix.toLowerCase())) {
         setDetectedBranch(branch);
@@ -183,7 +183,7 @@ export default function CreateTicket({ user }) {
         return;
       }
     }
-    
+
     setDetectedBranch("Head Office BD");
     setFormData(prev => ({ ...prev, branch: "Head Office BD" }));
   };
@@ -240,7 +240,7 @@ export default function CreateTicket({ user }) {
   const handleToggleFavorite = async (templateId) => {
     const token = localStorage.getItem("cbcToken");
     if (!token) return;
-    
+
     try {
       const result = await toggleFavorite(templateId, token);
       if (result.isFavorite) {
@@ -579,7 +579,7 @@ export default function CreateTicket({ user }) {
                     >
                       <option value="">Select a system</option>
                       {systemOptions.map((system) => (
-                        <option key={system} value={system}>{system}</option>
+                        <option key={system.id} value={system.name}>{system.name}</option>
                       ))}
                     </select>
                   </div>
@@ -597,7 +597,7 @@ export default function CreateTicket({ user }) {
                     >
                       <option value="">Select a department</option>
                       {departmentOptions.map((dept) => (
-                        <option key={dept} value={dept}>{dept}</option>
+                        <option key={dept.id} value={dept.name}>{dept.name}</option>
                       ))}
                     </select>
                   </div>
@@ -619,7 +619,7 @@ export default function CreateTicket({ user }) {
                     >
                       <option value="">Select a branch</option>
                       {branchOptions.map((branch) => (
-                        <option key={branch} value={branch}>{branch}</option>
+                        <option key={branch.id} value={branch.name}>{branch.name}</option>
                       ))}
                     </select>
                   </div>
@@ -674,11 +674,10 @@ export default function CreateTicket({ user }) {
                             onChange={handleChange}
                             className="w-4 h-4 text-blue-600"
                           />
-                          <span className={`px-3 py-1 rounded-full text-xs font-medium transition-all group-hover:scale-105 ${
-                            risk === "HIGH" ? "bg-gradient-to-r from-red-100 to-red-200 text-red-700 border border-red-300" :
+                          <span className={`px-3 py-1 rounded-full text-xs font-medium transition-all group-hover:scale-105 ${risk === "HIGH" ? "bg-gradient-to-r from-red-100 to-red-200 text-red-700 border border-red-300" :
                             risk === "MEDIUM" ? "bg-gradient-to-r from-yellow-100 to-yellow-200 text-yellow-700 border border-yellow-300" :
-                            "bg-gradient-to-r from-blue-100 to-blue-200 text-blue-700 border border-blue-300"
-                          }`}>
+                              "bg-gradient-to-r from-blue-100 to-blue-200 text-blue-700 border border-blue-300"
+                            }`}>
                             {risk}
                           </span>
                         </label>
@@ -762,9 +761,9 @@ export default function CreateTicket({ user }) {
 }
 
 // Template Sidebar Component
-function TemplateSidebar({ 
-  searchTemplate, setSearchTemplate, selectedCategory, setSelectedCategory, 
-  favoriteTemplates, otherTemplates, categories, favorites, onApplyTemplate, onToggleFavorite 
+function TemplateSidebar({
+  searchTemplate, setSearchTemplate, selectedCategory, setSelectedCategory,
+  favoriteTemplates, otherTemplates, categories, favorites, onApplyTemplate, onToggleFavorite
 }) {
   return (
     <div className="space-y-4">

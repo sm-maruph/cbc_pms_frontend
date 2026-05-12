@@ -3,11 +3,15 @@ import { Link } from "react-router-dom";
 import {
   UserPlus, Edit, Trash2, Search, Filter, X, CheckCircle, AlertCircle,
   Clock, Server, User, FileText, Plus, Eye, Save, ChevronLeft, ChevronRight,
-  Users, Ticket, Database, MapPin, Layout, Settings, Shield, Star
+  Users, Ticket, Database, MapPin, Layout, Settings, Shield, Star, TrendingUp
 } from "lucide-react";
 
+import {
+  PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer
+} from 'recharts';
+
 // Import API functions
-import { 
+import {
   getTickets, updateTicket, deleteTicket,
   getUsers, createUser, updateUser, deleteUser,
   getDashboardStats,
@@ -20,7 +24,7 @@ import {
 export default function AdminDashboard({ user }) {
   // Current active tab
   const [activeTab, setActiveTab] = useState("tickets");
-  
+
   // Data states
   const [tickets, setTickets] = useState([]);
   const [users, setUsers] = useState([]);
@@ -36,23 +40,24 @@ export default function AdminDashboard({ user }) {
     resolvedTickets: 0,
     highRiskTickets: 0,
   });
-  
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notifications, setNotifications] = useState([]);
-  
+
   // Search/filter states
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterRisk, setFilterRisk] = useState("all");
-  
+
   // Modal states
   const [showModal, setShowModal] = useState(false);
   const [modalType, setModalType] = useState(""); // user, ticket, system, department, branch, template
   const [editingItem, setEditingItem] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [deleteType, setDeleteType] = useState(null);
-  
+  const [chartTimeRange, setChartTimeRange] = useState('daily'); // daily, weekly, monthly, quarterly, yearly
+
   const token = localStorage.getItem("cbcToken");
 
   // Notification helper
@@ -95,10 +100,42 @@ export default function AdminDashboard({ user }) {
     else notify("Not authenticated", "error");
   }, []);
 
+
+  // Helper to filter tickets based on selected time range
+  const filterTicketsByDateRange = (tickets, range) => {
+    const now = new Date();
+    let startDate;
+    switch (range) {
+      case 'daily':
+        startDate = new Date(now.setHours(0, 0, 0, 0));
+        break;
+      case 'weekly':
+        startDate = new Date(now.setDate(now.getDate() - 7));
+        break;
+      case 'monthly':
+        startDate = new Date(now.setMonth(now.getMonth() - 1));
+        break;
+      case 'quarterly':
+        startDate = new Date(now.setMonth(now.getMonth() - 3));
+        break;
+      case 'yearly':
+        startDate = new Date(now.setFullYear(now.getFullYear() - 1));
+        break;
+      default:
+        startDate = new Date(now.setHours(0, 0, 0, 0));
+    }
+    return tickets.filter(ticket => new Date(ticket.date) >= startDate);
+  };
+
+
+  const filteredTicketsForCharts = useMemo(() => {
+    return filterTicketsByDateRange(tickets, chartTimeRange);
+  }, [tickets, chartTimeRange]);
+
   // Filtered tickets
   const filteredTickets = useMemo(() => {
     return tickets.filter(ticket => {
-      const matchesSearch = 
+      const matchesSearch =
         ticket.system_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         ticket.problem_details?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         ticket.reportedByName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -111,7 +148,7 @@ export default function AdminDashboard({ user }) {
 
   // Filtered users
   const filteredUsers = useMemo(() => {
-    return users.filter(u => 
+    return users.filter(u =>
       u.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       u.email?.toLowerCase().includes(searchTerm.toLowerCase())
     );
@@ -119,28 +156,28 @@ export default function AdminDashboard({ user }) {
 
   // Filtered systems
   const filteredSystems = useMemo(() => {
-    return systems.filter(s => 
+    return systems.filter(s =>
       s.name?.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [systems, searchTerm]);
 
   // Filtered departments
   const filteredDepartments = useMemo(() => {
-    return departments.filter(d => 
+    return departments.filter(d =>
       d.name?.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [departments, searchTerm]);
 
   // Filtered branches
   const filteredBranches = useMemo(() => {
-    return branches.filter(b => 
+    return branches.filter(b =>
       b.name?.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [branches, searchTerm]);
 
   // Filtered templates
   const filteredTemplates = useMemo(() => {
-    return templates.filter(t => 
+    return templates.filter(t =>
       t.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       t.category?.toLowerCase().includes(searchTerm.toLowerCase())
     );
@@ -283,6 +320,42 @@ export default function AdminDashboard({ user }) {
     }
   };
 
+  // Computed statistics from tickets (instead of backend)
+  const computedStats = useMemo(() => {
+    const total = tickets.length;
+    const open = tickets.filter(t => t.status === 'open').length;
+    const inProgress = tickets.filter(t => t.status === 'in-progress').length;
+    const resolved = tickets.filter(t => t.status === 'resolved').length;
+    const highRisk = tickets.filter(t => t.risk_label === 'HIGH').length;
+    return { totalTickets: total, openTickets: open, inProgressTickets: inProgress, resolvedTickets: resolved, highRiskTickets: highRisk };
+  }, [tickets]);
+
+
+  const statusChartData = useMemo(() => {
+  const open = filteredTicketsForCharts.filter(t => t.status === 'open').length;
+  const inProgress = filteredTicketsForCharts.filter(t => t.status === 'in-progress').length;
+  const resolved = filteredTicketsForCharts.filter(t => t.status === 'resolved').length;
+  return [
+    { name: 'Open', value: open, color: '#ef4444' },
+    { name: 'In Progress', value: inProgress, color: '#eab308' },
+    { name: 'Resolved', value: resolved, color: '#22c55e' },
+  ];
+  // No .filter() – all three categories always appear
+}, [filteredTicketsForCharts]);
+
+  const riskChartData = useMemo(() => {
+    // Exclude resolved tickets
+    const unresolved = tickets.filter(t => t.status !== 'resolved');
+    const low = unresolved.filter(t => t.risk_label === 'LOW').length;
+    const medium = unresolved.filter(t => t.risk_label === 'MEDIUM').length;
+    const high = unresolved.filter(t => t.risk_label === 'HIGH').length;
+    return [
+      { name: 'Low Risk', value: low, color: '#3b82f6' },
+      { name: 'Medium Risk', value: medium, color: '#f97316' },
+      { name: 'High Risk', value: high, color: '#ef4444' },
+    ].filter(item => item.value > 0);
+  }, [tickets]);   // runs whenever tickets change
+
   // Template CRUD
   const handleSaveTemplate = async (e) => {
     e.preventDefault();
@@ -340,7 +413,7 @@ export default function AdminDashboard({ user }) {
     if (formData.get("root_cause")) updates.root_cause = formData.get("root_cause");
     if (formData.get("resolution")) updates.resolution = formData.get("resolution");
     if (formData.get("risk_label")) updates.risk_label = formData.get("risk_label");
-    
+
     try {
       await updateTicket(editingItem.id, updates, token);
       notify("Ticket updated successfully");
@@ -810,55 +883,55 @@ export default function AdminDashboard({ user }) {
         );
 
       case "templates":
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full">
-        <thead className="bg-gray-50 border-b border-gray-200">
-          <tr>
-            <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">ID</th>
-            <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Name</th>
-            <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Category</th>
-            <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">System</th>
-            <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Risk</th>
-            <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Actions</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-200">
-          {filteredTemplates.length === 0 ? (
-            <tr>
-              <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
-                No templates found
-              </td>
-            </tr>
-          ) : (
-            filteredTemplates.map((t) => (
-              <tr key={t.id} className="hover:bg-gray-50 transition">
-                <td className="px-6 py-4 text-sm text-gray-500">{t.id}</td>
-                <td className="px-6 py-4 text-sm font-medium text-gray-900">{t.name}</td>
-                <td className="px-6 py-4 text-sm text-gray-600">{t.category}</td>
-                <td className="px-6 py-4 text-sm text-gray-600">{t.system_name}</td>
-                <td className="px-6 py-4">
-                  <span className={`px-2 py-1 rounded-full text-xs font-bold ${getRiskBadge(t.risk_label)}`}>
-                    {t.risk_label}
-                  </span>
-                </td>
-                <td className="px-6 py-4">
-                  <div className="flex gap-2">
-                    <button onClick={() => openModal("template", t)} className="p-1 text-blue-600 hover:bg-blue-50 rounded transition" title="Edit Template">
-                      <Edit size={18} />
-                    </button>
-                    <button onClick={() => { setDeleteConfirm(t.id); setDeleteType("template"); }} className="p-1 text-red-600 hover:bg-red-50 rounded transition" title="Delete Template">
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
+        return (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">ID</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Name</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Category</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">System</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Risk</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {filteredTemplates.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
+                      No templates found
+                    </td>
+                  </tr>
+                ) : (
+                  filteredTemplates.map((t) => (
+                    <tr key={t.id} className="hover:bg-gray-50 transition">
+                      <td className="px-6 py-4 text-sm text-gray-500">{t.id}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">{t.name}</td>
+                      <td className="px-6 py-4 text-sm text-gray-600">{t.category}</td>
+                      <td className="px-6 py-4 text-sm text-gray-600">{t.system_name}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${getRiskBadge(t.risk_label)}`}>
+                          {t.risk_label}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex gap-2">
+                          <button onClick={() => openModal("template", t)} className="p-1 text-blue-600 hover:bg-blue-50 rounded transition" title="Edit Template">
+                            <Edit size={18} />
+                          </button>
+                          <button onClick={() => { setDeleteConfirm(t.id); setDeleteType("template"); }} className="p-1 text-red-600 hover:bg-red-50 rounded transition" title="Delete Template">
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        );
       default:
         return null;
     }
@@ -880,9 +953,8 @@ export default function AdminDashboard({ user }) {
       {/* Notifications */}
       <div className="fixed top-4 right-4 space-y-2 z-50">
         {notifications.map((n) => (
-          <div key={n.id} className={`flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg ${
-            n.type === "success" ? "bg-green-500 text-white" : "bg-red-500 text-white"
-          }`}>
+          <div key={n.id} className={`flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg ${n.type === "success" ? "bg-green-500 text-white" : "bg-red-500 text-white"
+            }`}>
             {n.type === "success" ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
             <span className="text-sm font-medium">{n.msg}</span>
           </div>
@@ -897,7 +969,7 @@ export default function AdminDashboard({ user }) {
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+        {/* <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           <div className="bg-white rounded-lg shadow p-6 border-l-4 border-blue-600">
             <p className="text-gray-600 text-sm font-semibold mb-1">Total Tickets</p>
             <p className="text-4xl font-bold text-gray-900">{stats.totalTickets}</p>
@@ -922,6 +994,104 @@ export default function AdminDashboard({ user }) {
             <p className="text-gray-600 text-sm font-semibold mb-1">Registered Users</p>
             <p className="text-4xl font-bold text-gray-900">{users.length}</p>
           </div>
+        </div> */}
+
+        {/* Time Range Filter for Charts */}
+        <div className="flex flex-wrap gap-2 mb-4">
+          <button
+            onClick={() => setChartTimeRange('daily')}
+            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'daily' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+          >
+            Today
+          </button>
+          <button
+            onClick={() => setChartTimeRange('weekly')}
+            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'weekly' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+          >
+            This Week
+          </button>
+          <button
+            onClick={() => setChartTimeRange('monthly')}
+            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'monthly' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+          >
+            This Month
+          </button>
+          <button
+            onClick={() => setChartTimeRange('quarterly')}
+            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'quarterly' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+          >
+            This Quarter
+          </button>
+          <button
+            onClick={() => setChartTimeRange('yearly')}
+            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'yearly' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+          >
+            This Year
+          </button>
+        </div>
+        {/* Pie Charts */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          {/* Status Distribution */}
+          <div className="bg-white rounded-lg shadow p-4">
+            <h2 className="text-md font-semibold text-gray-800 mb-3 flex items-center gap-2">
+              <TrendingUp size={18} /> Status Distribution
+            </h2>
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie
+                  data={statusChartData}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  outerRadius={80}
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  {statusChartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Risk Distribution */}
+          <div className="bg-white rounded-lg shadow p-4">
+            <h2 className="text-md font-semibold text-gray-800 mb-3 flex items-center gap-2">
+              <AlertCircle size={18} /> Risk Distribution
+            </h2>
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie
+                  data={riskChartData}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  outerRadius={80}
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  {riskChartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+            <p className="text-xs text-gray-500 mt-2 text-center">
+              Excludes resolved tickets
+            </p>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -933,11 +1103,10 @@ export default function AdminDashboard({ user }) {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-t-lg transition ${
-                    activeTab === tab.id
-                      ? "bg-white text-blue-600 border-t border-l border-r border-gray-200 font-semibold"
-                      : "text-gray-600 hover:text-gray-800 hover:bg-gray-100"
-                  }`}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-t-lg transition ${activeTab === tab.id
+                    ? "bg-white text-blue-600 border-t border-l border-r border-gray-200 font-semibold"
+                    : "text-gray-600 hover:text-gray-800 hover:bg-gray-100"
+                    }`}
                 >
                   <Icon size={18} />
                   {tab.label}
@@ -999,13 +1168,13 @@ export default function AdminDashboard({ user }) {
         {/* Table */}
         <div className="bg-white rounded-lg shadow overflow-hidden">
           {renderTable()}
-          {filteredTickets.length === 0 && filteredUsers.length === 0 && filteredSystems.length === 0 && 
-           filteredDepartments.length === 0 && filteredBranches.length === 0 && filteredTemplates.length === 0 && (
-            <div className="p-8 text-center text-gray-500">
-              <FileText size={32} className="mx-auto mb-2 opacity-50" />
-              <p>No {activeTab} found</p>
-            </div>
-          )}
+          {filteredTickets.length === 0 && filteredUsers.length === 0 && filteredSystems.length === 0 &&
+            filteredDepartments.length === 0 && filteredBranches.length === 0 && filteredTemplates.length === 0 && (
+              <div className="p-8 text-center text-gray-500">
+                <FileText size={32} className="mx-auto mb-2 opacity-50" />
+                <p>No {activeTab} found</p>
+              </div>
+            )}
         </div>
       </div>
 
