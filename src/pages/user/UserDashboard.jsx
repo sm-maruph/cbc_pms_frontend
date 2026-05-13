@@ -7,11 +7,13 @@ import {
 import {
   Search, Filter, Clock, User, Server, AlertCircle,
   CheckCircle, Edit, Trash2, Plus, X,
-  Activity, TrendingUp, FileText, Zap, AlertTriangle
+  Activity, TrendingUp, FileText, Zap, AlertTriangle,
+  Eye, Calendar, ChevronLeft, ChevronRight,
+  Printer, Download, Mail, ExternalLink
 } from "lucide-react";
 
 // Import API functions
-import { getTickets, updateTicket, deleteTicket } from "../../services/api";
+import { getTickets, updateTicket, getUsers } from "../../services/api";
 
 /* USERS (for assignee names – kept as is) */
 const defaultUsers = [
@@ -50,24 +52,50 @@ const COLORS = {
   high: "#ef4444"
 };
 
+// Date filter functions
+const getDateFilters = () => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  
+  const startOfWeek = new Date(today);
+  const day = today.getDay();
+  const diff = day === 0 ? 6 : day - 1;
+  startOfWeek.setDate(today.getDate() - diff);
+  startOfWeek.setHours(0, 0, 0, 0);
+  
+  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  
+  const startOfQuarter = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
+  
+  const startOfYear = new Date(today.getFullYear(), 0, 1);
+  
+  return { today, yesterday, startOfWeek, startOfMonth, startOfQuarter, startOfYear };
+};
+
 export default function UserDashboard({ user }) {
   const [tickets, setTickets] = useState([]);
+  const [users, setUsers] = useState([]);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [sortBy, setSortBy] = useState("date");
+  const [dateFilter, setDateFilter] = useState("all");
+  const [selectedCardFilter, setSelectedCardFilter] = useState(null); // For card click filtering
 
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [editTicket, setEditTicket] = useState(null);
-  const [deleteWarning, setDeleteWarning] = useState(null);
+  const [viewTicket, setViewTicket] = useState(null);
   const [resolutionPopup, setResolutionPopup] = useState(null);
   const [resolutionData, setResolutionData] = useState({ rootCause: "", upTime: "" });
 
   const [notifications, setNotifications] = useState([]);
 
   const token = localStorage.getItem("cbcToken");
-  console.log("UserDashboard mounted with token:", token);
+  const currentUserEmail = user?.email || localStorage.getItem("userEmail");
 
-  // Helper: convert API ticket object to local format (preserves all expected fields)
+  // Helper: convert API ticket object to local format
   const formatTicket = (apiTicket) => ({
     ...apiTicket,
     id: apiTicket.id.toString(),
@@ -76,9 +104,20 @@ export default function UserDashboard({ user }) {
     assignedToName: apiTicket.assigned_to_name
       ? (defaultUsers.find(u => u.email === apiTicket.assigned_to_name)?.name || apiTicket.assigned_to_name)
       : "",
+    assignedToEmail: apiTicket.assigned_to_name,
     downTime: apiTicket.down_time ? new Date(apiTicket.down_time).toLocaleString() : "",
     upTime: apiTicket.up_time ? new Date(apiTicket.up_time).toLocaleString() : "",
     date: apiTicket.date ? new Date(apiTicket.date).toISOString().split("T")[0] : "",
+    createdAt: apiTicket.created_at ? new Date(apiTicket.created_at) : null,
+    affectedUser: apiTicket.affected_user,
+    pcName: apiTicket.pc_name,
+    problemDetails: apiTicket.problem_details,
+    systemName: apiTicket.system_name,
+    department: apiTicket.department,
+    branch: apiTicket.branch,
+    rootCause: apiTicket.root_cause,
+    resolution: apiTicket.resolution,
+    reported_by_email: apiTicket.reported_by_email,
   });
 
   // Fetch tickets from API
@@ -88,9 +127,7 @@ export default function UserDashboard({ user }) {
       return;
     }
     try {
-      console.log("Fetching tickets with token:", token.slice(0, 20) + "...");
       const data = await getTickets(token);
-      console.log("Raw API response:", data);
       setTickets(data.map(formatTicket));
     } catch (err) {
       notify("Failed to load tickets", "error");
@@ -98,31 +135,23 @@ export default function UserDashboard({ user }) {
     }
   };
 
-  // useEffect(() => {
-  //   fetchTickets();
-  // }, []); // runs once on mount
-
-
+  // Fetch users for assignment
+  const fetchUsers = async () => {
+    if (!token) return;
+    try {
+      const data = await getUsers(token);
+      setUsers(data);
+    } catch (err) {
+      console.error("Failed to fetch users", err);
+    }
+  };
 
   useEffect(() => {
-    const fetchTickets = async () => {
-        if (!token) {
-            console.log("No token, skipping fetch");
-            return;
-        }
-        try {
-            const data = await getTickets(token);
-            console.log("Tickets received:", data);
-            setTickets(data.map(formatTicket));
-        } catch (err) {
-            notify("Failed to load tickets", "error");
-            console.error(err);
-        }
-    };
     fetchTickets();
-}, [token]); // re‑fetch when token changes
+    fetchUsers();
+  }, [token]);
 
-  // Notification helper (unchanged)
+  // Notification helper
   const notify = (msg, type = "success") => {
     const id = Date.now();
     setNotifications((prev) => [...prev, { id, msg, type }]);
@@ -140,7 +169,18 @@ export default function UserDashboard({ user }) {
     updateField(field, new Date().toLocaleString());
   };
 
-  // Save edited ticket – send only changed fields to API
+  // Assign user to ticket (only for open tickets)
+  const assignToUser = async (ticketId, userEmail) => {
+    try {
+      await updateTicket(ticketId, { assigned_to_name: userEmail, status: "in-progress" }, token);
+      notify("Ticket assigned and status changed to In Progress");
+      fetchTickets();
+    } catch (err) {
+      notify("Assignment failed", "error");
+    }
+  };
+
+  // Save edited ticket
   const saveTicket = async () => {
     if (!editTicket) return;
     try {
@@ -153,35 +193,19 @@ export default function UserDashboard({ user }) {
       if (editTicket.downTime !== undefined) payload.down_time = editTicket.downTime;
       if (editTicket.upTime !== undefined) payload.up_time = editTicket.upTime;
       if (editTicket.problemDetails !== undefined) payload.problem_details = editTicket.problemDetails;
+      if (editTicket.status !== undefined) payload.status = editTicket.status;
 
       await updateTicket(editTicket.id, payload, token);
       notify("Ticket updated successfully");
       setSelectedTicket(null);
       setEditTicket(null);
-      fetchTickets(); // refresh list
+      fetchTickets();
     } catch (err) {
       notify("Update failed", "error");
     }
   };
 
-  const confirmDelete = (id) => {
-    setDeleteWarning(id);
-  };
-
-  const handleDelete = async (id) => {
-    try {
-      await deleteTicket(id, token);
-      notify("Ticket deleted successfully");
-      setSelectedTicket(null);
-      setEditTicket(null);
-      setDeleteWarning(null);
-      fetchTickets();
-    } catch (err) {
-      notify("Delete failed", "error");
-    }
-  };
-
-  // Helper to update just status (without popup) for non‑resolved transitions
+  // Helper to update just status
   const updateTicketStatus = async (id, newStatus) => {
     try {
       await updateTicket(id, { status: newStatus }, token);
@@ -192,7 +216,7 @@ export default function UserDashboard({ user }) {
     }
   };
 
-  // Status change handler – shows resolution popup only when moving to "resolved"
+  // Status change handler
   const handleStatusChange = (ticket, newStatus) => {
     if (newStatus === "resolved") {
       setResolutionPopup(ticket);
@@ -205,7 +229,7 @@ export default function UserDashboard({ user }) {
     }
   };
 
-  // Confirm resolution with root cause and up time
+  // Confirm resolution
   const confirmResolution = async () => {
     try {
       await updateTicket(resolutionPopup.id, {
@@ -229,36 +253,94 @@ export default function UserDashboard({ user }) {
     }));
   };
 
-  // Stats derived from tickets (replaces old localStorage stats)
+  // Check if user can edit ticket
+  const canEditTicket = (ticket) => {
+    return ticket.reported_by_email === currentUserEmail || ticket.assignedToEmail === currentUserEmail;
+  };
+
+  // Apply date filter
+  const applyDateFilter = (ticketsList) => {
+    if (dateFilter === "all") return ticketsList;
+    
+    const { today, yesterday, startOfWeek, startOfMonth, startOfQuarter, startOfYear } = getDateFilters();
+    
+    return ticketsList.filter(ticket => {
+      if (!ticket.createdAt) return false;
+      const ticketDate = new Date(ticket.createdAt);
+      ticketDate.setHours(0, 0, 0, 0);
+      
+      switch(dateFilter) {
+        case "today":
+          return ticketDate.getTime() === today.getTime();
+        case "yesterday":
+          return ticketDate.getTime() === yesterday.getTime();
+        case "week":
+          return ticketDate >= startOfWeek;
+        case "month":
+          return ticketDate >= startOfMonth;
+        case "quarter":
+          return ticketDate >= startOfQuarter;
+        case "year":
+          return ticketDate >= startOfYear;
+        default:
+          return true;
+      }
+    });
+  };
+
+  // Stats derived from tickets (respects date filter)
   const stats = useMemo(() => {
-    const open = tickets.filter(t => t.status === "open").length;
-    const progress = tickets.filter(t => t.status === "in-progress").length;
-    const resolved = tickets.filter(t => t.status === "resolved").length;
-    const highRisk = tickets.filter(t => t.riskLevel === "high").length;
-    const mediumRisk = tickets.filter(t => t.riskLevel === "medium").length;
-    const lowRisk = tickets.filter(t => t.riskLevel === "low").length;
-    return { open, progress, resolved, total: tickets.length, highRisk, mediumRisk, lowRisk };
-  }, [tickets]);
+    const filteredByDate = applyDateFilter(tickets);
+    
+    const open = filteredByDate.filter(t => t.status === "open").length;
+    const progress = filteredByDate.filter(t => t.status === "in-progress").length;
+    const resolved = filteredByDate.filter(t => t.status === "resolved").length;
+    
+    // Risk assessment excluding resolved tickets
+    const activeTickets = filteredByDate.filter(t => t.status !== "resolved");
+    const highRisk = activeTickets.filter(t => t.riskLevel === "high").length;
+    const mediumRisk = activeTickets.filter(t => t.riskLevel === "medium").length;
+    const lowRisk = activeTickets.filter(t => t.riskLevel === "low").length;
+    
+    return { 
+      open, progress, resolved, total: filteredByDate.length, 
+      highRisk, mediumRisk, lowRisk, activeTotal: activeTickets.length 
+    };
+  }, [tickets, dateFilter]);
+
+  // Handle card click to filter table
+  const handleCardClick = (status) => {
+    setSelectedCardFilter(status);
+    setFilterStatus(status);
+  };
 
   // Filtered and sorted tickets
   const filtered = useMemo(() => {
-    return tickets
+    let filteredTickets = tickets
       .filter((t) => filterStatus === "all" || t.status === filterStatus)
       .filter((t) =>
         (t.systemName || "").toLowerCase().includes(search.toLowerCase()) ||
         (t.reportedByName || "").toLowerCase().includes(search.toLowerCase()) ||
-        (t.problemDetails || "").toLowerCase().includes(search.toLowerCase())
-      )
-      .sort((a, b) => {
-        if (sortBy === "date") return new Date(b.date) - new Date(a.date);
-        if (sortBy === "status") return a.status.localeCompare(b.status);
-        if (sortBy === "risk") {
-          const riskOrder = { high: 3, medium: 2, low: 1 };
-          return (riskOrder[b.riskLevel] || 1) - (riskOrder[a.riskLevel] || 1);
-        }
-        return 0;
-      });
-  }, [tickets, search, filterStatus, sortBy]);
+        (t.problemDetails || "").toLowerCase().includes(search.toLowerCase()) ||
+        (t.affectedUser || "").toLowerCase().includes(search.toLowerCase())
+      );
+    
+    // Apply date filter
+    filteredTickets = applyDateFilter(filteredTickets);
+    
+    // Apply sorting
+    filteredTickets.sort((a, b) => {
+      if (sortBy === "date") return new Date(b.date) - new Date(a.date);
+      if (sortBy === "status") return a.status.localeCompare(b.status);
+      if (sortBy === "risk") {
+        const riskOrder = { high: 3, medium: 2, low: 1 };
+        return (riskOrder[b.riskLevel] || 1) - (riskOrder[a.riskLevel] || 1);
+      }
+      return 0;
+    });
+    
+    return filteredTickets;
+  }, [tickets, search, filterStatus, sortBy, dateFilter]);
 
   const statusChartData = [
     { name: "Open", value: stats.open, color: COLORS.open },
@@ -272,17 +354,17 @@ export default function UserDashboard({ user }) {
     { name: "High Risk", value: stats.highRisk, color: COLORS.high },
   ].filter(item => item.value > 0);
 
-  // Ensure riskLevel exists for all tickets (fallback)
-  useEffect(() => {
-    if (tickets.some(t => !t.riskLevel)) {
-      const fixed = tickets.map(t => ({ ...t, riskLevel: t.riskLevel || "low" }));
-      setTickets(fixed);
-    }
-  }, [tickets]);
+  // Date filter buttons
+  const dateFilterButtons = [
+    { label: "All", value: "all" },
+    { label: "Today", value: "today" },
+    { label: "Yesterday", value: "yesterday" },
+    { label: "This Week", value: "week" },
+    { label: "This Month", value: "month" },
+    { label: "This Quarter", value: "quarter" },
+    { label: "This Year", value: "year" },
+  ];
 
-  // ----------------------------------------------------------------------
-  // JSX – exactly the same as your original, no design changes
-  // ----------------------------------------------------------------------
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-4 md:p-6">
 
@@ -372,37 +454,6 @@ export default function UserDashboard({ user }) {
         </div>
       )}
 
-      {/* DELETE WARNING MODAL */}
-      {deleteWarning && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="h-12 w-12 bg-red-100 rounded-full flex items-center justify-center">
-                <AlertTriangle size={24} className="text-red-600" />
-              </div>
-              <h3 className="text-xl font-semibold text-gray-800">Delete Ticket</h3>
-            </div>
-            <p className="text-gray-600 mb-6">
-              Are you sure you want to delete this ticket? This action cannot be undone.
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setDeleteWarning(null)}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleDelete(deleteWarning)}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* HEADER */}
       <div className="mb-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -410,7 +461,7 @@ export default function UserDashboard({ user }) {
             <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">
               Incident Dashboard
             </h1>
-            <p className="text-gray-500 mt-1">Welcome back, {user.name}</p>
+            <p className="text-gray-500 mt-1">Welcome back, {user?.name || "User"}</p>
           </div>
           <Link
             className="flex items-center gap-2 bg-gradient-to-r from-green-600 to-green-500 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105"
@@ -422,12 +473,17 @@ export default function UserDashboard({ user }) {
         </div>
       </div>
 
-      {/* STATS CARDS */}
+      {/* STATS CARDS - Clickable */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <div className="bg-white rounded-xl shadow-sm p-3 border border-gray-100">
+        <div 
+          onClick={() => handleCardClick("all")}
+          className={`bg-white rounded-xl shadow-sm p-3 border cursor-pointer transition-all hover:shadow-md ${
+            selectedCardFilter === "all" ? "ring-2 ring-blue-500 shadow-md" : ""
+          }`}
+        >
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-500 text-xs">Total</p>
+              <p className="text-gray-500 text-xs">Total Tickets</p>
               <p className="text-2xl font-bold text-gray-800">{stats.total}</p>
             </div>
             <div className="h-10 w-10 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -435,7 +491,12 @@ export default function UserDashboard({ user }) {
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-xl shadow-sm p-3 border border-gray-100">
+        <div 
+          onClick={() => handleCardClick("open")}
+          className={`bg-white rounded-xl shadow-sm p-3 border cursor-pointer transition-all hover:shadow-md ${
+            selectedCardFilter === "open" ? "ring-2 ring-red-500 shadow-md" : ""
+          }`}
+        >
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-500 text-xs">Open</p>
@@ -446,7 +507,12 @@ export default function UserDashboard({ user }) {
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-xl shadow-sm p-3 border border-gray-100">
+        <div 
+          onClick={() => handleCardClick("in-progress")}
+          className={`bg-white rounded-xl shadow-sm p-3 border cursor-pointer transition-all hover:shadow-md ${
+            selectedCardFilter === "in-progress" ? "ring-2 ring-yellow-500 shadow-md" : ""
+          }`}
+        >
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-500 text-xs">In Progress</p>
@@ -457,7 +523,12 @@ export default function UserDashboard({ user }) {
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-xl shadow-sm p-3 border border-gray-100">
+        <div 
+          onClick={() => handleCardClick("resolved")}
+          className={`bg-white rounded-xl shadow-sm p-3 border cursor-pointer transition-all hover:shadow-md ${
+            selectedCardFilter === "resolved" ? "ring-2 ring-green-500 shadow-md" : ""
+          }`}
+        >
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-500 text-xs">Resolved</p>
@@ -493,14 +564,17 @@ export default function UserDashboard({ user }) {
                 ))}
               </Pie>
               <Tooltip />
-              <Legend />
+              <Legend onClick={(e) => handleCardClick(e.value.toLowerCase().replace(" ", "-"))} />
             </PieChart>
           </ResponsiveContainer>
+          <p className="text-xs text-gray-400 text-center mt-2">
+            * Click on legend or cards to filter
+          </p>
         </div>
 
         <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
           <h2 className="text-md font-semibold text-gray-800 mb-3 flex items-center gap-2">
-            <AlertCircle size={18} /> Risk Distribution
+            <AlertCircle size={18} /> Risk Assessment (Active Tickets Only)
           </h2>
           <ResponsiveContainer width="100%" height={260}>
             <PieChart>
@@ -522,23 +596,26 @@ export default function UserDashboard({ user }) {
               <Legend />
             </PieChart>
           </ResponsiveContainer>
+          <p className="text-xs text-gray-400 text-center mt-2">
+            * Excludes resolved tickets. Active tickets: {stats.activeTotal}
+          </p>
         </div>
       </div>
 
       {/* FILTERS */}
-      <div className="bg-white rounded-xl shadow-sm p-3 mb-4 border border-gray-100">
-        <div className="flex flex-wrap gap-2 items-center">
+      <div className="bg-white rounded-xl shadow-sm p-4 mb-4 border border-gray-100">
+        <div className="flex flex-wrap gap-2 items-center mb-3">
           <div className="relative flex-1 min-w-[180px]">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
             <input
-              className="pl-9 pr-3 py-1.5 border border-gray-200 rounded-lg w-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Search..."
+              className="pl-9 pr-3 py-2 border border-gray-200 rounded-lg w-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Search tickets..."
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
 
           <select
-            className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             onChange={(e) => setFilterStatus(e.target.value)}
             value={filterStatus}
           >
@@ -549,7 +626,7 @@ export default function UserDashboard({ user }) {
           </select>
 
           <select
-            className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             onChange={(e) => setSortBy(e.target.value)}
             value={sortBy}
           >
@@ -558,9 +635,27 @@ export default function UserDashboard({ user }) {
             <option value="risk">Sort by Risk</option>
           </select>
         </div>
+        
+        {/* Date Filter Buttons */}
+        <div className="flex flex-wrap gap-2">
+          <Calendar size={16} className="text-gray-400 self-center" />
+          {dateFilterButtons.map((button) => (
+            <button
+              key={button.value}
+              onClick={() => setDateFilter(button.value)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                dateFilter === button.value
+                  ? "bg-blue-600 text-white shadow-md"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
+            >
+              {button.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* TABLE */}
+      {/* TICKETS TABLE */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -577,7 +672,7 @@ export default function UserDashboard({ user }) {
                 <th className="p-3 text-left font-semibold text-gray-600">Risk</th>
                 <th className="p-3 text-left font-semibold text-gray-600">Status</th>
                 <th className="p-3 text-center font-semibold text-gray-600">Actions</th>
-              </tr>
+               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
@@ -592,6 +687,7 @@ export default function UserDashboard({ user }) {
               ) : (
                 filtered.map((t, i) => {
                   const risk = riskConfig[t.riskLevel] || riskConfig.low;
+                  const StatusIcon = statusConfig[t.status]?.icon || AlertCircle;
                   return (
                     <tr key={t.id} className="border-b border-gray-100 hover:bg-gray-50 transition">
                       <td className="p-3 text-gray-500">{i + 1}</td>
@@ -603,17 +699,32 @@ export default function UserDashboard({ user }) {
                           </div>
                           <span className="font-medium text-gray-700">{t.reportedByName}</span>
                         </div>
-                       </td>
-                      <td className="p-3 text-gray-600">{t.assignedToName || "-"}</td>
+                      </td>
+                      <td className="p-3">
+                        {t.status === "open" ? (
+                          <select
+                            value={t.assignedToEmail || ""}
+                            onChange={(e) => assignToUser(t.id, e.target.value)}
+                            className="text-sm border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="">Assign to...</option>
+                            {users.map((u) => (
+                              <option key={u.id} value={u.email}>{u.name}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-gray-600">{t.assignedToName || "Unassigned"}</span>
+                        )}
+                      </td>
                       <td className="p-3">
                         <div className="flex items-center gap-1.5">
                           <Server size={12} className="text-gray-400" />
                           <span className="text-gray-700">{t.systemName}</span>
                         </div>
-                       </td>
+                      </td>
                       <td className="p-3 text-gray-600 max-w-[180px] truncate" title={t.problemDetails}>
                         {t.problemDetails}
-                       </td>
+                      </td>
                       <td className="p-3 text-gray-500 text-xs whitespace-nowrap">
                         {t.downTime ? (
                           <div className="flex items-center gap-1">
@@ -621,7 +732,7 @@ export default function UserDashboard({ user }) {
                             {t.downTime}
                           </div>
                         ) : "-"}
-                       </td>
+                      </td>
                       <td className="p-3 text-gray-500 text-xs whitespace-nowrap">
                         {t.upTime ? (
                           <div className="flex items-center gap-1">
@@ -629,45 +740,53 @@ export default function UserDashboard({ user }) {
                             {t.upTime}
                           </div>
                         ) : "-"}
-                       </td>
+                      </td>
                       <td className="p-3">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${risk.color}`}>
                           {risk.label}
                         </span>
-                       </td>
+                      </td>
                       <td className="p-3">
                         <div className="flex items-center gap-1.5">
-                          <div className={`h-1.5 w-1.5 rounded-full ${t.status === "open" ? "bg-red-500" : t.status === "in-progress" ? "bg-yellow-500" : "bg-green-500"}`} />
+                          <StatusIcon size={12} className={t.status === "open" ? "text-red-500" : t.status === "in-progress" ? "text-yellow-500" : "text-green-500"} />
                           <select
                             value={t.status}
                             onChange={(e) => handleStatusChange(t, e.target.value)}
                             className="text-xs border-0 bg-transparent focus:ring-1 focus:ring-blue-500 rounded cursor-pointer"
+                            disabled={t.status === "open" && !t.assignedToEmail}
                           >
                             <option value="open">Open</option>
                             <option value="in-progress">In Progress</option>
                             <option value="resolved">Resolved</option>
                           </select>
                         </div>
-                       </td>
+                        {t.status === "open" && !t.assignedToEmail && (
+                          <p className="text-xs text-amber-600 mt-1">Assign first</p>
+                        )}
+                      </td>
                       <td className="p-3">
                         <div className="flex items-center justify-center gap-1.5">
                           <button
                             className="p-1 text-blue-600 hover:bg-blue-50 rounded transition"
-                            onClick={() => {
-                              setSelectedTicket(t);
-                              setEditTicket({ ...t });
-                            }}
+                            onClick={() => setViewTicket(t)}
+                            title="View Details"
                           >
-                            <Edit size={14} />
+                            <Eye size={14} />
                           </button>
-                          <button
-                            className="p-1 text-red-600 hover:bg-red-50 rounded transition"
-                            onClick={() => confirmDelete(t.id)}
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          {canEditTicket(t) && (
+                            <button
+                              className="p-1 text-green-600 hover:bg-green-50 rounded transition"
+                              onClick={() => {
+                                setSelectedTicket(t);
+                                setEditTicket({ ...t });
+                              }}
+                              title="Edit Ticket"
+                            >
+                              <Edit size={14} />
+                            </button>
+                          )}
                         </div>
-                       </td>
+                      </td>
                     </tr>
                   );
                 })
@@ -677,7 +796,148 @@ export default function UserDashboard({ user }) {
         </div>
       </div>
 
-      {/* EDIT MODAL */}
+      {/* VIEW TICKET MODAL - Complete with all fields */}
+      {viewTicket && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl">
+            <div className="flex justify-between items-center p-4 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-indigo-50">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center">
+                  <FileText size={20} className="text-blue-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-800">Ticket Details</h2>
+                  <p className="text-xs text-gray-500">ID: #{viewTicket.id}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setViewTicket(null)}
+                className="p-1 hover:bg-gray-100 rounded transition"
+              >
+                <X size={18} className="text-gray-500" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Ticket SL</p>
+                  <p className="font-medium text-gray-800">{viewTicket.ticket_sl || "-"}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Month</p>
+                  <p className="font-medium text-gray-800">{viewTicket.month || "-"}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500">System Name</p>
+                  <p className="font-medium text-gray-800">{viewTicket.systemName || "-"}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Department</p>
+                  <p className="font-medium text-gray-800">{viewTicket.department || "-"}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Branch</p>
+                  <p className="font-medium text-gray-800">{viewTicket.branch || "-"}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Affected User</p>
+                  <p className="font-medium text-gray-800">{viewTicket.affectedUser || "-"}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500">PC Name</p>
+                  <p className="font-medium text-gray-800">{viewTicket.pcName || "-"}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Risk Level</p>
+                  <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${riskConfig[viewTicket.riskLevel]?.color || "bg-gray-100"}`}>
+                    {riskConfig[viewTicket.riskLevel]?.label || viewTicket.riskLevel}
+                  </span>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Status</p>
+                  <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${statusConfig[viewTicket.status]?.color || "bg-gray-100"}`}>
+                    {statusConfig[viewTicket.status]?.label || viewTicket.status}
+                  </span>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Reported By</p>
+                  <p className="font-medium text-gray-800">{viewTicket.reportedByName || "-"}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Reported By Email</p>
+                  <p className="font-medium text-gray-800">{viewTicket.reported_by_email || "-"}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Assigned To</p>
+                  <p className="font-medium text-gray-800">{viewTicket.assignedToName || "Unassigned"}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Assigned To Email</p>
+                  <p className="font-medium text-gray-800">{viewTicket.assignedToEmail || "-"}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Report Date</p>
+                  <p className="font-medium text-gray-800">{viewTicket.date || "-"}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Created At</p>
+                  <p className="font-medium text-gray-800">{viewTicket.createdAt ? new Date(viewTicket.createdAt).toLocaleString() : "-"}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Updated At</p>
+                  <p className="font-medium text-gray-800">{viewTicket.updated_at ? new Date(viewTicket.updated_at).toLocaleString() : "-"}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Down Time</p>
+                  <p className="font-medium text-gray-800">{viewTicket.downTime || "-"}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Up Time</p>
+                  <p className="font-medium text-gray-800">{viewTicket.upTime || "-"}</p>
+                </div>
+              </div>
+              
+              <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                <p className="text-xs text-gray-500 mb-2">Problem Details</p>
+                <p className="text-gray-800 whitespace-pre-wrap">{viewTicket.problemDetails || "-"}</p>
+              </div>
+              
+              {viewTicket.rootCause && (
+                <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                  <p className="text-xs text-gray-500 mb-2">Root Cause</p>
+                  <p className="text-gray-800 whitespace-pre-wrap">{viewTicket.rootCause}</p>
+                </div>
+              )}
+              
+              {viewTicket.resolution && (
+                <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                  <p className="text-xs text-gray-500 mb-2">Resolution</p>
+                  <p className="text-gray-800 whitespace-pre-wrap">{viewTicket.resolution}</p>
+                </div>
+              )}
+              
+              {viewTicket.remarks && (
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-xs text-gray-500 mb-2">Remarks</p>
+                  <p className="text-gray-800 whitespace-pre-wrap">{viewTicket.remarks}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end p-4 border-t border-gray-100 bg-gray-50">
+              <button
+                onClick={() => setViewTicket(null)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT MODAL - Added Status field */}
       {selectedTicket && editTicket && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl">
@@ -738,6 +998,18 @@ export default function UserDashboard({ user }) {
                   </select>
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <select
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={editTicket.status || "open"}
+                    onChange={(e) => updateField("status", e.target.value)}
+                  >
+                    <option value="open">Open</option>
+                    <option value="in-progress">In Progress</option>
+                    <option value="resolved">Resolved</option>
+                  </select>
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Down Time</label>
                   <div className="flex gap-2">
                     <input
@@ -784,31 +1056,19 @@ export default function UserDashboard({ user }) {
               </div>
             </div>
 
-            <div className="flex justify-between items-center p-4 border-t border-gray-100 bg-gray-50">
+            <div className="flex justify-end gap-2 p-4 border-t border-gray-100 bg-gray-50">
               <button
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition text-sm"
-                onClick={() => {
-                  setSelectedTicket(null);
-                  confirmDelete(editTicket.id);
-                }}
+                onClick={() => setSelectedTicket(null)}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition text-sm"
               >
-                <Trash2 size={14} />
-                Delete
+                Cancel
               </button>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setSelectedTicket(null)}
-                  className="px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition text-sm"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={saveTicket}
-                  className="px-3 py-1.5 bg-gradient-to-r from-green-600 to-green-500 text-white rounded-lg hover:shadow-lg transition text-sm"
-                >
-                  Save Changes
-                </button>
-              </div>
+              <button
+                onClick={saveTicket}
+                className="px-4 py-2 bg-gradient-to-r from-green-600 to-green-500 text-white rounded-lg hover:shadow-lg transition text-sm font-medium"
+              >
+                Save Changes
+              </button>
             </div>
           </div>
         </div>
@@ -832,5 +1092,3 @@ export default function UserDashboard({ user }) {
     </div>
   );
 }
-
-

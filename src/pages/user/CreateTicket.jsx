@@ -167,6 +167,31 @@ export default function CreateTicket({ user }) {
     }));
   }, [templatesList]);
 
+  // Get available users from localStorage - UPDATED to use ID
+  const availableUsers = useMemo(() => {
+    const stored = localStorage.getItem("cbcUsers");
+    const usersMap = new Map();
+
+    if (stored) {
+      JSON.parse(stored).forEach((u) => {
+        // Make sure user has an id and name
+        if (u.id && u.name) {
+          // Use id as key to prevent duplicates
+          if (!usersMap.has(u.id)) {
+            usersMap.set(u.id, { id: u.id, name: u.name });
+          }
+        }
+      });
+    }
+    console.log(JSON.parse(localStorage.getItem("cbcUsers")));
+
+    
+    // Sort users alphabetically by name
+    return Array.from(usersMap.values()).sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+  }, []);
+
   // Function to detect branch from PC name
   const detectBranchFromPC = (pcName) => {
     if (!pcName || pcName.trim() === "") {
@@ -187,21 +212,6 @@ export default function CreateTicket({ user }) {
     setDetectedBranch("Head Office BD");
     setFormData(prev => ({ ...prev, branch: "Head Office BD" }));
   };
-
-  const availableUsers = useMemo(() => {
-    const stored = localStorage.getItem("cbcUsers");
-    const usersMap = new Map();
-
-    if (stored) {
-      JSON.parse(stored).forEach((u) => {
-        if (u.email) {
-          usersMap.set(u.email, { email: u.email, name: u.name });
-        }
-      });
-    }
-
-    return Array.from(usersMap.values());
-  }, []);
 
   const riskLevels = ["LOW", "MEDIUM", "HIGH"];
 
@@ -308,6 +318,7 @@ export default function CreateTicket({ user }) {
       return;
     }
 
+    // UPDATED: Send assignedToId instead of assignedToEmail
     const ticketData = {
       date: formData.date,
       systemName: formData.systemName,
@@ -316,7 +327,7 @@ export default function CreateTicket({ user }) {
       branch: formData.branch,
       riskLabel: formData.riskLabel,
       affectedUser: formData.affectedUser,
-      assignedToEmail: formData.assignedTo || null,
+      assignedToId: formData.assignedTo || null, // Now sending user ID
       pcName: formData.pcName || "",
       downTime: formData.downTime,
     };
@@ -603,7 +614,7 @@ export default function CreateTicket({ user }) {
                   </div>
                 </div>
 
-                {/* Row 3: Branch & Assigned To */}
+                {/* Row 3: Branch & Assigned To - UPDATED Assigned To dropdown */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="block text-sm font-semibold text-gray-700 flex items-center gap-2">
@@ -635,8 +646,10 @@ export default function CreateTicket({ user }) {
                       className="w-full px-4 py-2 rounded-xl border-2 border-gray-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none bg-white transition-all"
                     >
                       <option value="">Unassigned</option>
-                      {availableUsers.map((u) => (
-                        <option key={u.email} value={u.email}>{u.name}</option>
+                      {availableUsers.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.name}
+                        </option>
                       ))}
                     </select>
                   </div>
