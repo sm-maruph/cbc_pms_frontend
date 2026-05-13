@@ -708,7 +708,7 @@ export default function AdminDashboard({ user }) {
               <tbody className="divide-y divide-gray-200">
                 {filteredTickets.map((ticket) => (
                   <tr key={ticket.id} className="hover:bg-gray-50 transition">
-                    <td className="px-6 py-4 text-sm font-semibold text-gray-900">#{ticket.id}</td>
+                    <td className="px-6 py-4 text-sm font-semibold text-gray-900">#{ticket.ticket_sl}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{new Date(ticket.date).toLocaleDateString()}</td>
                     <td className="px-6 py-4 text-sm font-medium text-gray-900">{ticket.reportedByName}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{ticket.system_name}</td>

@@ -7,10 +7,16 @@ const request = async (endpoint, method = 'GET', body = null, token = null) => {
     if (token) headers['Authorization'] = `Bearer ${token}`;
     const options = { method, headers };
     if (body) options.body = JSON.stringify(body);
-    const response = await fetch(`${API_BASE}${endpoint}`, options);
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Request failed');
-    return data;
+    
+    try {
+        const response = await fetch(`${API_BASE}${endpoint}`, options);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || 'Request failed');
+        return data;
+    } catch (error) {
+        console.error(`API Error: ${error.message}`);
+        throw error;
+    }
 };
 
 // Auth
@@ -22,6 +28,9 @@ export const getMyTickets = (token) => request('/tickets/my', 'GET', null, token
 export const createTicket = (ticketData, token) => request('/tickets', 'POST', ticketData, token);
 export const updateTicket = (id, updates, token) => request(`/tickets/${id}`, 'PUT', updates, token);
 export const deleteTicket = (id, token) => request(`/tickets/${id}`, 'DELETE', null, token);
+
+// ✅ NEW: Get ticket by ticket_sl (for displaying ticket details)
+export const getTicketBySL = (ticket_sl, token) => request(`/tickets/sl/${ticket_sl}`, 'GET', null, token);
 
 // Dashboard stats
 export const getDashboardStats = (token) => request('/stats', 'GET', null, token);
@@ -35,14 +44,20 @@ export const getReportData = (range, startDate, endDate, token) => {
     return request(url, 'GET', null, token);
 };
 
-// Admin users
+// Users - Regular users (for assignment dropdown)
+export const getAssignableUsers = (token) => request('/users/assignable', 'GET', null, token);
+
+// Admin users (full user management)
 export const getUsers = (token) => request('/users', 'GET', null, token);
 export const createUser = (userData, token) => request('/users', 'POST', userData, token);
 export const updateUser = (id, userData, token) => request(`/users/${id}`, 'PUT', userData, token);
 export const deleteUser = (id, token) => request(`/users/${id}`, 'DELETE', null, token);
 
+// ✅ NEW: Get current user profile
+export const getCurrentUser = (token) => request('/auth/me', 'GET', null, token);
 
-
+// ✅ NEW: Update user profile (for regular users)
+export const updateUserProfile = (userData, token) => request('/auth/profile', 'PUT', userData, token);
 
 // ============================================================
 // Systems CRUD
@@ -81,3 +96,9 @@ export const deleteTemplate = (id, token) => request(`/static/templates/${id}`, 
 // ============================================================
 export const getUserFavorites = (token) => request('/static/favorites', 'GET', null, token);
 export const toggleFavorite = (templateId, token) => request(`/static/favorites/${templateId}`, 'POST', null, token);
+
+// ============================================================
+// Dashboard Statistics
+// ============================================================
+export const getTicketStats = (token) => request('/stats/tickets', 'GET', null, token);
+export const getRiskStats = (token) => request('/stats/risk', 'GET', null, token);

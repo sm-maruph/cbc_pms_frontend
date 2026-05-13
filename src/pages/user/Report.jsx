@@ -1,7 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 import * as XLSX from "xlsx";
+
+// Import API functions
+import { getReportData } from "../../services/api";
 
 export default function Report({ user }) {
   const [loading, setLoading] = useState(false);
@@ -11,143 +14,197 @@ export default function Report({ user }) {
   const [showCustomPicker, setShowCustomPicker] = useState(false);
   const [reportData, setReportData] = useState(null);
   const [ticketsData, setTicketsData] = useState([]);
+  const [uploadedData, setUploadedData] = useState(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [useUploadedData, setUseUploadedData] = useState(false);
 
-  // Dummy Data Generator
-  const generateDummyData = (range, startDate = null, endDate = null) => {
-    let dates = [];
-    let currentDate = new Date();
+  const token = localStorage.getItem("cbcToken");
+
+  // Fetch report data from API
+  const fetchReportData = async (range, startDate = null, endDate = null) => {
+    if (!token) return;
     
-    // Determine date range
-    if (range === "daily") {
-      dates = [new Date()];
-    } else if (range === "weekly") {
-      for (let i = 6; i >= 0; i--) {
-        dates.push(new Date(currentDate.setDate(currentDate.getDate() - i)));
-        currentDate = new Date();
-      }
-    } else if (range === "monthly") {
-      for (let i = 29; i >= 0; i--) {
-        dates.push(new Date(currentDate.setDate(currentDate.getDate() - i)));
-        currentDate = new Date();
-      }
-    } else if (range === "quarterly") {
-      for (let i = 89; i >= 0; i--) {
-        dates.push(new Date(currentDate.setDate(currentDate.getDate() - i)));
-        currentDate = new Date();
-      }
-    } else if (range === "yearly") {
-      for (let i = 364; i >= 0; i--) {
-        dates.push(new Date(currentDate.setDate(currentDate.getDate() - i)));
-        currentDate = new Date();
-      }
-    } else if (range === "custom" && startDate && endDate) {
-      let start = new Date(startDate);
-      let end = new Date(endDate);
-      while (start <= end) {
-        dates.push(new Date(start));
-        start.setDate(start.getDate() + 1);
-      }
-    }
-
-    // Generate random ticket data
-    const statuses = ["Open", "In Progress", "Resolved", "Closed"];
-    const priorities = ["Low", "Medium", "High", "Critical"];
-    const categories = ["Hardware", "Software", "Network", "Database", "Security"];
-    
-    const generatedTickets = [];
-    let totalTickets = 0;
-    let resolvedTickets = 0;
-    let openTickets = 0;
-    let inProgressTickets = 0;
-    let criticalTickets = 0;
-    let highTickets = 0;
-    let totalResponseTime = 0;
-    let totalResolutionTime = 0;
-
-    dates.forEach((date, index) => {
-      const ticketsCount = Math.floor(Math.random() * 10) + 1;
-      totalTickets += ticketsCount;
+    setLoading(true);
+    try {
+      let reportRange = range;
+      let sDate = startDate;
+      let eDate = endDate;
       
-      for (let i = 0; i < ticketsCount; i++) {
-        const status = statuses[Math.floor(Math.random() * statuses.length)];
-        const priority = priorities[Math.floor(Math.random() * priorities.length)];
-        const category = categories[Math.floor(Math.random() * categories.length)];
-        const responseTime = Math.floor(Math.random() * 48) + 1;
-        const resolutionTime = status === "Resolved" || status === "Closed" 
-          ? Math.floor(Math.random() * 120) + 5 
-          : null;
+      if (range === "custom" && startDate && endDate) {
+        reportRange = "custom";
+      }
+      
+      const data = await getReportData(reportRange, sDate, eDate, token);
+      
+      if (data && data.tickets) {
+        // Transform API data to match the expected format
+        const transformedTickets = data.tickets.map(ticket => ({
+          id: ticket.id,
+          ticket_sl: ticket.ticket_sl,
+          title: ticket.system_name || "N/A",
+          description: ticket.problem_details || "",
+          status: ticket.status || "open",
+          priority: ticket.risk_label || "MEDIUM",
+          category: ticket.system_name || "General",
+          createdAt: ticket.created_at,
+          resolvedAt: ticket.up_time,
+          responseTime: calculateResponseTime(ticket.created_at, ticket.updated_at),
+          resolutionTime: ticket.up_time ? calculateTimeDiff(ticket.created_at, ticket.up_time) : "Pending",
+          assignedTo: ticket.assigned_to_name || "Unassigned",
+          reportedBy: ticket.reportedByName || ticket.reported_by_email,
+          systemName: ticket.system_name,
+          department: ticket.department,
+          branch: ticket.branch,
+          affectedUser: ticket.affected_user,
+          pcName: ticket.pc_name,
+          downTime: ticket.down_time,
+          upTime: ticket.up_time,
+          rootCause: ticket.root_cause,
+          resolution: ticket.resolution,
+          remarks: ticket.remarks,
+        }));
         
-        if (status === "Resolved" || status === "Closed") resolvedTickets++;
-        if (status === "Open") openTickets++;
-        if (status === "In Progress") inProgressTickets++;
-        if (priority === "Critical") criticalTickets++;
-        if (priority === "High") highTickets++;
-        
-        totalResponseTime += responseTime;
-        if (resolutionTime) totalResolutionTime += resolutionTime;
-        
-        generatedTickets.push({
-          id: `TKT-${String(index + 1).padStart(4, "0")}`,
-          title: `${category} Issue: ${Math.random().toString(36).substring(7)}`,
-          description: `Detailed description of the ${category.toLowerCase()} problem...`,
-          status,
-          priority,
-          category,
-          createdAt: date.toISOString(),
-          resolvedAt: resolutionTime ? new Date(date.getTime() + resolutionTime * 3600000).toISOString() : null,
-          responseTime: `${responseTime}h`,
-          resolutionTime: resolutionTime ? `${resolutionTime}h` : "Pending",
-          assignedTo: Math.random() > 0.5 ? "IT Support Team" : "System Admin",
+        setTicketsData(transformedTickets);
+        setReportData({
+          summary: data.summary || calculateSummary(transformedTickets),
+          tickets: transformedTickets,
+          dateRange: {
+            start: data.startDate || new Date(),
+            end: data.endDate || new Date(),
+          },
         });
       }
-    });
+    } catch (err) {
+      console.error("Error fetching report data:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  // Helper functions
+  const calculateResponseTime = (createdAt, updatedAt) => {
+    if (!createdAt) return "0h";
+    const created = new Date(createdAt);
+    const updated = new Date(updatedAt || new Date());
+    const hours = Math.round((updated - created) / (1000 * 60 * 60));
+    return `${hours}h`;
+  };
+
+  const calculateTimeDiff = (start, end) => {
+    if (!start || !end) return "Pending";
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const hours = Math.round((endDate - startDate) / (1000 * 60 * 60));
+    return `${hours}h`;
+  };
+
+  const calculateSummary = (tickets) => {
+    const totalTickets = tickets.length;
+    const resolvedTickets = tickets.filter(t => t.status === "resolved").length;
+    const openTickets = tickets.filter(t => t.status === "open").length;
+    const inProgressTickets = tickets.filter(t => t.status === "in-progress").length;
+    const criticalTickets = tickets.filter(t => t.priority === "HIGH").length;
+    const highTickets = tickets.filter(t => t.priority === "HIGH").length;
+    
+    const totalResponseTime = tickets.reduce((sum, t) => {
+      const time = parseInt(t.responseTime) || 0;
+      return sum + time;
+    }, 0);
+    
+    const totalResolutionTime = tickets
+      .filter(t => t.status === "resolved" && t.resolutionTime !== "Pending")
+      .reduce((sum, t) => {
+        const time = parseInt(t.resolutionTime) || 0;
+        return sum + time;
+      }, 0);
+    
     const avgResponseTime = totalTickets > 0 ? (totalResponseTime / totalTickets).toFixed(1) : 0;
     const avgResolutionTime = resolvedTickets > 0 ? (totalResolutionTime / resolvedTickets).toFixed(1) : 0;
-    const satisfactionRate = resolvedTickets > 0 ? Math.floor(Math.random() * 30) + 70 : 0;
-
+    const resolutionRate = totalTickets > 0 ? ((resolvedTickets / totalTickets) * 100).toFixed(1) : 0;
+    
     return {
-      summary: {
-        totalTickets,
-        resolvedTickets,
-        openTickets,
-        inProgressTickets,
-        criticalTickets,
-        highTickets,
-        avgResponseTime: `${avgResponseTime}h`,
-        avgResolutionTime: `${avgResolutionTime}h`,
-        satisfactionRate: `${satisfactionRate}%`,
-        resolutionRate: totalTickets > 0 ? ((resolvedTickets / totalTickets) * 100).toFixed(1) : 0,
-      },
-      tickets: generatedTickets,
-      dateRange: {
-        start: dates[0],
-        end: dates[dates.length - 1],
-      },
+      totalTickets,
+      resolvedTickets,
+      openTickets,
+      inProgressTickets,
+      criticalTickets,
+      highTickets,
+      avgResponseTime: `${avgResponseTime}h`,
+      avgResolutionTime: `${avgResolutionTime}h`,
+      satisfactionRate: "85%",
+      resolutionRate,
     };
   };
 
-  // Load report data
+  // Load report data when range changes
   useEffect(() => {
-    loadReportData();
-  }, [dateRange, customStartDate, customEndDate]);
-
-  const loadReportData = () => {
-    setLoading(true);
-    setTimeout(() => {
-      let startDate = null;
-      let endDate = null;
-      
+    if (!useUploadedData) {
       if (dateRange === "custom" && customStartDate && customEndDate) {
-        startDate = customStartDate;
-        endDate = customEndDate;
+        fetchReportData("custom", customStartDate, customEndDate);
+      } else if (dateRange !== "custom") {
+        fetchReportData(dateRange);
       }
+    }
+  }, [dateRange, customStartDate, customEndDate, useUploadedData]);
+
+  // Handle file upload
+  const handleFileUpload = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, { type: "array" });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet);
       
-      const data = generateDummyData(dateRange, startDate, endDate);
-      setReportData(data);
-      setTicketsData(data.tickets);
-      setLoading(false);
-    }, 800);
+      // Transform uploaded data to match ticket format
+      const transformedData = jsonData.map((row, index) => ({
+        id: row.id || index + 1,
+        ticket_sl: row.ticket_sl || `UPLOAD-${index + 1}`,
+        title: row.system_name || row.title || "N/A",
+        description: row.problem_details || row.description || "",
+        status: row.status?.toLowerCase() || "open",
+        priority: row.risk_label || row.priority || "MEDIUM",
+        category: row.system_name || "General",
+        createdAt: row.created_at || row.createdAt || new Date().toISOString(),
+        resolvedAt: row.up_time || row.resolvedAt || null,
+        responseTime: row.response_time || row.responseTime || "0h",
+        resolutionTime: row.resolution_time || row.resolutionTime || "Pending",
+        assignedTo: row.assigned_to_name || row.assignedTo || "Unassigned",
+        reportedBy: row.reportedByName || row.reported_by_email || "Unknown",
+        systemName: row.system_name,
+        department: row.department,
+        branch: row.branch,
+        affectedUser: row.affected_user,
+        pcName: row.pc_name,
+        downTime: row.down_time,
+        upTime: row.up_time,
+        rootCause: row.root_cause,
+        resolution: row.resolution,
+        remarks: row.remarks,
+      }));
+      
+      setUploadedData(transformedData);
+      setTicketsData(transformedData);
+      setReportData({
+        summary: calculateSummary(transformedData),
+        tickets: transformedData,
+        dateRange: { start: new Date(), end: new Date() },
+      });
+      setUseUploadedData(true);
+      setShowUploadModal(false);
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  // Switch back to live data
+  const useLiveData = () => {
+    setUseUploadedData(false);
+    setUploadedData(null);
+    fetchReportData(dateRange);
   };
 
   // Export to PDF
@@ -155,7 +212,6 @@ export default function Report({ user }) {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     
-    // Header
     doc.setFontSize(20);
     doc.setTextColor(40, 40, 100);
     doc.text("IT Support Ticket Report", pageWidth / 2, 20, { align: "center" });
@@ -165,11 +221,12 @@ export default function Report({ user }) {
     doc.text(`Generated on: ${new Date().toLocaleString()}`, pageWidth / 2, 30, { align: "center" });
     doc.text(`Report Period: ${formatDateRange()}`, pageWidth / 2, 37, { align: "center" });
     doc.text(`Generated by: ${user?.name} (${user?.role})`, pageWidth / 2, 44, { align: "center" });
+    doc.text(`Data Source: ${useUploadedData ? "Uploaded File" : "Live Database"}`, pageWidth / 2, 51, { align: "center" });
     
     // Summary Section
     doc.setFontSize(14);
     doc.setTextColor(40, 40, 100);
-    doc.text("Executive Summary", 14, 60);
+    doc.text("Executive Summary", 14, 70);
     
     doc.setFontSize(10);
     doc.setTextColor(0, 0, 0);
@@ -184,7 +241,7 @@ export default function Report({ user }) {
       ["Satisfaction Rate", reportData.summary.satisfactionRate],
     ];
     
-    let yPos = 68;
+    let yPos = 78;
     summaryData.forEach((item, index) => {
       doc.text(item[0], 14, yPos + (index * 7));
       doc.text(String(item[1]), 80, yPos + (index * 7));
@@ -193,19 +250,19 @@ export default function Report({ user }) {
     // Priority Distribution
     doc.setFontSize(14);
     doc.setTextColor(40, 40, 100);
-    doc.text("Priority Distribution", 14, 130);
+    doc.text("Priority Distribution", 14, 140);
     
     doc.setFontSize(10);
     doc.setTextColor(0, 0, 0);
     const priorityData = [
       ["Critical", reportData.summary.criticalTickets],
       ["High", reportData.summary.highTickets],
-      ["Medium", reportData.summary.totalTickets - reportData.summary.criticalTickets - reportData.summary.highTickets - (reportData.summary.openTickets + reportData.summary.resolvedTickets)],
+      ["Medium/Low", reportData.summary.totalTickets - reportData.summary.criticalTickets - reportData.summary.highTickets],
     ];
     
     priorityData.forEach((item, index) => {
-      doc.text(item[0], 14, 145 + (index * 7));
-      doc.text(String(item[1]), 80, 145 + (index * 7));
+      doc.text(item[0], 14, 155 + (index * 7));
+      doc.text(String(item[1]), 80, 155 + (index * 7));
     });
     
     // Tickets Table
@@ -214,13 +271,12 @@ export default function Report({ user }) {
     doc.setTextColor(40, 40, 100);
     doc.text("Detailed Ticket List", 14, 20);
     
-    const tableColumn = ["ID", "Title", "Status", "Priority", "Category", "Created", "Response Time"];
+    const tableColumn = ["SL No", "System", "Status", "Priority", "Created", "Response Time"];
     const tableRows = ticketsData.slice(0, 20).map(ticket => [
-      ticket.id,
-      ticket.title.substring(0, 30),
+      ticket.ticket_sl || ticket.id,
+      ticket.systemName?.substring(0, 30) || ticket.title?.substring(0, 30) || "N/A",
       ticket.status,
       ticket.priority,
-      ticket.category,
       new Date(ticket.createdAt).toLocaleDateString(),
       ticket.responseTime,
     ]);
@@ -240,19 +296,21 @@ export default function Report({ user }) {
 
   // Export to CSV
   const exportToCSV = () => {
-    const headers = ["Ticket ID", "Title", "Status", "Priority", "Category", "Created Date", "Resolved Date", "Response Time", "Resolution Time", "Assigned To"];
+    const headers = ["Ticket SL", "System", "Status", "Priority", "Department", "Branch", "Created Date", "Resolved Date", "Response Time", "Resolution Time", "Assigned To", "Reported By"];
     
     const rows = ticketsData.map(ticket => [
-      ticket.id,
-      ticket.title,
+      ticket.ticket_sl || ticket.id,
+      ticket.systemName || ticket.title,
       ticket.status,
       ticket.priority,
-      ticket.category,
+      ticket.department || "N/A",
+      ticket.branch || "N/A",
       new Date(ticket.createdAt).toLocaleString(),
       ticket.resolvedAt ? new Date(ticket.resolvedAt).toLocaleString() : "Not resolved",
       ticket.responseTime,
       ticket.resolutionTime,
       ticket.assignedTo,
+      ticket.reportedBy,
     ]);
     
     const csvContent = [headers, ...rows].map(row => row.join(",")).join("\n");
@@ -309,6 +367,26 @@ export default function Report({ user }) {
             {reportData && (
               <div className="flex gap-3">
                 <button
+                  onClick={() => setShowUploadModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-all duration-200 shadow-sm"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  Upload Data
+                </button>
+                {useUploadedData && (
+                  <button
+                    onClick={useLiveData}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all duration-200 shadow-sm"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Live Data
+                  </button>
+                )}
+                <button
                   onClick={exportToPDF}
                   className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all duration-200 shadow-sm"
                 >
@@ -338,7 +416,48 @@ export default function Report({ user }) {
               </div>
             )}
           </div>
+          
+          {/* Data Source Indicator */}
+          {useUploadedData && (
+            <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs">
+              <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
+              Currently viewing uploaded data (not live)
+            </div>
+          )}
         </div>
+
+        {/* Upload Modal */}
+        {showUploadModal && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-semibold text-gray-800">Upload Previous Data</h3>
+                <button onClick={() => setShowUploadModal(false)} className="text-gray-500 hover:text-gray-700">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <p className="text-gray-600 mb-4">Upload Excel or CSV file containing previous ticket data</p>
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleFileUpload}
+                className="w-full p-2 border border-gray-300 rounded-lg mb-4"
+              />
+              <div className="text-xs text-gray-500 mb-4">
+                <p>Supported formats: .xlsx, .xls, .csv</p>
+                <p>File should contain columns like: ticket_sl, system_name, status, risk_label, etc.</p>
+              </div>
+              <button
+                onClick={() => setShowUploadModal(false)}
+                className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Time Frame Selector */}
         <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
@@ -351,6 +470,7 @@ export default function Report({ user }) {
                   setDateRange(tf.value);
                   if (tf.value !== "custom") setShowCustomPicker(false);
                   else setShowCustomPicker(true);
+                  if (!useUploadedData) setUseUploadedData(false);
                 }}
                 className={`flex items-center gap-2 px-5 py-2 rounded-lg transition-all duration-200 ${
                   dateRange === tf.value
@@ -388,7 +508,9 @@ export default function Report({ user }) {
                 </div>
               </div>
               <button
-                onClick={loadReportData}
+                onClick={() => {
+                  if (!useUploadedData) fetchReportData("custom", customStartDate, customEndDate);
+                }}
                 disabled={!customStartDate || !customEndDate}
                 className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
               >
@@ -444,7 +566,7 @@ export default function Report({ user }) {
             </div>
 
             {/* Charts Section */}
-            <div className="grid grid-cols-1 lg:grid-cold-2 gap-6 mb-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
               {/* Status Distribution */}
               <div className="bg-white rounded-2xl shadow-sm p-6">
                 <h3 className="text-lg font-semibold text-gray-800 mb-4">Ticket Status Distribution</h3>
@@ -523,8 +645,8 @@ export default function Report({ user }) {
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">SL No</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">System</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
@@ -534,12 +656,12 @@ export default function Report({ user }) {
                   <tbody className="bg-white divide-y divide-gray-200">
                     {ticketsData.slice(0, 10).map((ticket) => (
                       <tr key={ticket.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-6 py-4 text-sm font-medium text-gray-900">{ticket.id}</td>
-                        <td className="px-6 py-4 text-sm text-gray-600">{ticket.title}</td>
+                        <td className="px-6 py-4 text-sm font-mono text-gray-900">{ticket.ticket_sl || ticket.id}</td>
+                        <td className="px-6 py-4 text-sm text-gray-600">{ticket.systemName || ticket.title}</td>
                         <td className="px-6 py-4">
                           <span className={`px-2 py-1 text-xs rounded-full ${
-                            ticket.status === "Resolved" || ticket.status === "Closed" ? "bg-green-100 text-green-800" :
-                            ticket.status === "In Progress" ? "bg-yellow-100 text-yellow-800" :
+                            ticket.status === "resolved" ? "bg-green-100 text-green-800" :
+                            ticket.status === "in-progress" ? "bg-yellow-100 text-yellow-800" :
                             "bg-red-100 text-red-800"
                           }`}>
                             {ticket.status}
@@ -547,10 +669,9 @@ export default function Report({ user }) {
                         </td>
                         <td className="px-6 py-4">
                           <span className={`px-2 py-1 text-xs rounded-full ${
-                            ticket.priority === "Critical" ? "bg-red-100 text-red-800" :
-                            ticket.priority === "High" ? "bg-orange-100 text-orange-800" :
-                            ticket.priority === "Medium" ? "bg-blue-100 text-blue-800" :
-                            "bg-gray-100 text-gray-800"
+                            ticket.priority === "HIGH" ? "bg-red-100 text-red-800" :
+                            ticket.priority === "MEDIUM" ? "bg-orange-100 text-orange-800" :
+                            "bg-blue-100 text-blue-800"
                           }`}>
                             {ticket.priority}
                           </span>

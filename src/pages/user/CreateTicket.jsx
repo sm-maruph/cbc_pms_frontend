@@ -17,7 +17,8 @@ import {
   getBranches,
   getTemplates,
   getUserFavorites,
-  toggleFavorite
+  toggleFavorite,
+  getAssignableUsers
 } from "../../services/api";
 
 // Icon mapping for templates (database stores icon name as string)
@@ -82,6 +83,10 @@ export default function CreateTicket({ user }) {
   const [favorites, setFavorites] = useState([]);
   const [dataLoading, setDataLoading] = useState(true);
 
+  // State for assignable users from API
+  const [assignableUsers, setAssignableUsers] = useState([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+
   // Initialize downtime with current date and time
   const getCurrentDateTime = () => {
     const now = new Date();
@@ -98,7 +103,8 @@ export default function CreateTicket({ user }) {
 
   const [formData, setFormData] = useState({
     affectedUser: "",
-    assignedTo: "",
+    assignedToEmail: "",
+    assignedToName: "",
     systemName: "",
     problemDetails: "",
     department: "",
@@ -147,6 +153,32 @@ export default function CreateTicket({ user }) {
     fetchStaticData();
   }, []);
 
+
+
+  // Fetch assignable users for dropdown
+  useEffect(() => {
+    const fetchAssignableUsers = async () => {
+      const token = localStorage.getItem("cbcToken");
+      if (!token) return;
+
+      setUsersLoading(true);
+      try {
+        const users = await getAssignableUsers(token);
+        // Remove duplicates and ensure we have id and name
+        const uniqueUsers = users.filter((user, index, self) =>
+          index === self.findIndex((u) => u.id === user.id)
+        );
+        setAssignableUsers(uniqueUsers);
+      } catch (err) {
+        console.error("Error fetching assignable users:", err);
+      } finally {
+        setUsersLoading(false);
+      }
+    };
+
+    fetchAssignableUsers();
+  }, []);
+
   // Transform templates from database to frontend format
   const quickTemplates = useMemo(() => {
     return templatesList.map(template => ({
@@ -168,30 +200,28 @@ export default function CreateTicket({ user }) {
   }, [templatesList]);
 
   // Get available users from localStorage - UPDATED to use ID
-  const availableUsers = useMemo(() => {
-    const stored = localStorage.getItem("cbcUsers");
-    const usersMap = new Map();
+  // const availableUsers = useMemo(() => {
+  //   const stored = localStorage.getItem("cbcUsers");
+  //   const usersMap = new Map();
 
-    if (stored) {
-      JSON.parse(stored).forEach((u) => {
-        // Make sure user has an id and name
-        if (u.id && u.name) {
-          // Use id as key to prevent duplicates
-          if (!usersMap.has(u.id)) {
-            usersMap.set(u.id, { id: u.id, name: u.name });
-          }
-        }
-      });
-    }
-    console.log(JSON.parse(localStorage.getItem("cbcUsers")));
+  //   if (stored) {
+  //     JSON.parse(stored).forEach((u) => {
+  //       // Make sure user has an id and name
+  //       if (u.id && u.name) {
+  //         // Use id as key to prevent duplicates
+  //         if (!usersMap.has(u.id)) {
+  //           usersMap.set(u.id, { id: u.id, name: u.name });
+  //         }
+  //       }
+  //     });
+  //   }
+  //   console.log(JSON.parse(localStorage.getItem("cbcUsers")));
 
-    
-    // Sort users alphabetically by name
-    return Array.from(usersMap.values()).sort((a, b) =>
-      a.name.localeCompare(b.name)
-    );
-  }, []);
-
+  //   // Sort users alphabetically by name
+  //   return Array.from(usersMap.values()).sort((a, b) =>
+  //     a.name.localeCompare(b.name)
+  //   );
+  // }, []);
   // Function to detect branch from PC name
   const detectBranchFromPC = (pcName) => {
     if (!pcName || pcName.trim() === "") {
@@ -318,7 +348,19 @@ export default function CreateTicket({ user }) {
       return;
     }
 
-    // UPDATED: Send assignedToId instead of assignedToEmail
+    // Get the assigned user's name from assignableUsers
+    let assignedToName = "Unassigned";
+    let assignedToEmail = null;
+
+
+    if (formData.assignedToEmail && formData.assignedToEmail !== "") {
+      assignedToEmail = formData.assignedToEmail;
+      const selectedUser = assignableUsers.find(u => u.email === formData.assignedToEmail);
+      assignedToName = selectedUser ? selectedUser.name : formData.assignedToEmail.split('@')[0];
+    }
+
+
+    // No need to find user - assignedToEmail already contains the email
     const ticketData = {
       date: formData.date,
       systemName: formData.systemName,
@@ -327,10 +369,12 @@ export default function CreateTicket({ user }) {
       branch: formData.branch,
       riskLabel: formData.riskLabel,
       affectedUser: formData.affectedUser,
-      assignedToId: formData.assignedTo || null, // Now sending user ID
+      assignedToEmail: assignedToEmail,
+      assignedToName: assignedToName,  // ✅ ADD THIS
       pcName: formData.pcName || "",
       downTime: formData.downTime,
     };
+    console.log("Sending ticket data:", ticketData);
 
     try {
       await createTicket(ticketData, token);
@@ -640,18 +684,22 @@ export default function CreateTicket({ user }) {
                       Assigned To
                     </label>
                     <select
-                      name="assignedTo"
-                      value={formData.assignedTo}
+                      name="assignedToEmail"  // ✅ Changed to assignedToEmail
+                      value={formData.assignedToEmail}  // ✅ Changed to assignedToEmail
                       onChange={handleChange}
                       className="w-full px-4 py-2 rounded-xl border-2 border-gray-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none bg-white transition-all"
+                      disabled={usersLoading}
                     >
                       <option value="">Unassigned</option>
-                      {availableUsers.map((user) => (
-                        <option key={user.id} value={user.id}>
+                      {assignableUsers.map((user) => (
+                        <option key={user.id} value={user.email}>  
                           {user.name}
                         </option>
                       ))}
                     </select>
+                    {usersLoading && (
+                      <p className="text-xs text-gray-400">Loading users...</p>
+                    )}
                   </div>
                 </div>
 

@@ -13,23 +13,23 @@ import {
 } from "lucide-react";
 
 // Import API functions
-import { getTickets, updateTicket, getUsers } from "../../services/api";
+import { getTickets, updateTicket, getAssignableUsers, getTicketBySL } from "../../services/api";
 
 /* USERS (for assignee names – kept as is) */
-const defaultUsers = [
-  { email: "jahidul@cbc.com", name: "Jahidul Balat" },
-  { email: "sifat@cbc.com", name: "Sifat Nur Billah" },
-  { email: "supriya@cbc.com", name: "Supriya Das Gupta" },
-  { email: "tanim@cbc.com", name: "Tanim Mahmud" },
-  { email: "cito@cbc.com", name: "CITO" },
-  { email: "eazuddin@cbc.com", name: "Eaz Uddin" },
-  { email: "tudu@cbc.com", name: "Tudu" },
-  { email: "abubakar@cbc.com", name: "Abu Bakar Siddiq" },
-  { email: "shah@cbc.com", name: "Shah Mohammad Al Noor" },
-  { email: "salman@cbc.com", name: "Salman Ahmed" },
-  { email: "sm.maruph@cbc.com", name: "S. M. Maruph" },
-  { email: "raiyan@cbc.com", name: "Raiyan" },
-];
+// const defaultUsers = [
+//   { email: "jahidul@cbc.com", name: "Jahidul Balat" },
+//   { email: "sifat@cbc.com", name: "Sifat Nur Billah" },
+//   { email: "supriya@cbc.com", name: "Supriya Das Gupta" },
+//   { email: "tanim@cbc.com", name: "Tanim Mahmud" },
+//   { email: "cito@cbc.com", name: "CITO" },
+//   { email: "eazuddin@cbc.com", name: "Eaz Uddin" },
+//   { email: "tudu@cbc.com", name: "Tudu" },
+//   { email: "abubakar@cbc.com", name: "Abu Bakar Siddiq" },
+//   { email: "shah@cbc.com", name: "Shah Mohammad Al Noor" },
+//   { email: "salman@cbc.com", name: "Salman Ahmed" },
+//   { email: "sm.maruph@cbc.com", name: "S. M. Maruph" },
+//   { email: "raiyan@cbc.com", name: "Raiyan" },
+// ];
 
 const statusConfig = {
   open: { color: "bg-red-100 text-red-700 border-red-200", icon: AlertCircle, label: "Open" },
@@ -56,22 +56,22 @@ const COLORS = {
 const getDateFilters = () => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  
+
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
-  
+
   const startOfWeek = new Date(today);
   const day = today.getDay();
   const diff = day === 0 ? 6 : day - 1;
   startOfWeek.setDate(today.getDate() - diff);
   startOfWeek.setHours(0, 0, 0, 0);
-  
+
   const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  
+
   const startOfQuarter = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
-  
+
   const startOfYear = new Date(today.getFullYear(), 0, 1);
-  
+
   return { today, yesterday, startOfWeek, startOfMonth, startOfQuarter, startOfYear };
 };
 
@@ -95,16 +95,24 @@ export default function UserDashboard({ user }) {
   const token = localStorage.getItem("cbcToken");
   const currentUserEmail = user?.email || localStorage.getItem("userEmail");
 
+
+
+  // Helper: Get user name from email
+  const getUserName = (email) => {
+    if (!email) return "Unassigned";
+    const user = users.find(u => u.email === email);
+    return user ? user.name : email.split('@')[0];
+  };
+
+  // Helper: convert API ticket object to local format
   // Helper: convert API ticket object to local format
   const formatTicket = (apiTicket) => ({
     ...apiTicket,
     id: apiTicket.id.toString(),
     riskLevel: apiTicket.risk_label ? apiTicket.risk_label.toLowerCase() : "low",
-    reportedByName: apiTicket.reportedByName || "",
-    assignedToName: apiTicket.assigned_to_name
-      ? (defaultUsers.find(u => u.email === apiTicket.assigned_to_name)?.name || apiTicket.assigned_to_name)
-      : "",
-    assignedToEmail: apiTicket.assigned_to_name,
+    reportedByName: apiTicket.reportedByName || apiTicket.reporter_name || "",
+    assignedToName: apiTicket.assigned_to_name || "Unassigned",  // ✅ Just store raw value first
+    assignedToEmail: apiTicket.assigned_to_email || "",
     downTime: apiTicket.down_time ? new Date(apiTicket.down_time).toLocaleString() : "",
     upTime: apiTicket.up_time ? new Date(apiTicket.up_time).toLocaleString() : "",
     date: apiTicket.date ? new Date(apiTicket.date).toISOString().split("T")[0] : "",
@@ -118,6 +126,12 @@ export default function UserDashboard({ user }) {
     rootCause: apiTicket.root_cause,
     resolution: apiTicket.resolution,
     reported_by_email: apiTicket.reported_by_email,
+    ticket_sl: apiTicket.ticket_sl,
+    month: apiTicket.month,
+    remarks: apiTicket.remarks,
+    remarks_by_admin: apiTicket.remarks_by_admin,
+    special_instruction: apiTicket.special_instruction,
+    updated_at: apiTicket.updated_at,
   });
 
   // Fetch tickets from API
@@ -129,6 +143,15 @@ export default function UserDashboard({ user }) {
     try {
       const data = await getTickets(token);
       setTickets(data.map(formatTicket));
+      // Clean up any emails in assigned_to_name (backward compatibility)
+      // setTimeout(() => {
+      //   setTickets(prev => prev.map(ticket => {
+      //     if (ticket.assignedToName && ticket.assignedToName.includes('@')) {
+      //       return { ...ticket, assignedToName: getUserName(ticket.assignedToName) };
+      //     }
+      //     return ticket;
+      //   }));
+      // }, 100);
     } catch (err) {
       notify("Failed to load tickets", "error");
       console.error(err);
@@ -139,7 +162,7 @@ export default function UserDashboard({ user }) {
   const fetchUsers = async () => {
     if (!token) return;
     try {
-      const data = await getUsers(token);
+      const data = await getAssignableUsers(token);
       setUsers(data);
     } catch (err) {
       console.error("Failed to fetch users", err);
@@ -150,6 +173,28 @@ export default function UserDashboard({ user }) {
     fetchTickets();
     fetchUsers();
   }, [token]);
+
+
+  // Update assigned names when users are loaded (fixes the email display issue)
+  useEffect(() => {
+    if (users.length > 0 && tickets.length > 0) {
+      setTickets(prev => prev.map(ticket => {
+        // Find user by email in assignedToEmail
+        const foundUser = users.find(u => u.email === ticket.assignedToEmail);
+        if (foundUser && ticket.assignedToName !== foundUser.name) {
+          return { ...ticket, assignedToName: foundUser.name };
+        }
+        // Also handle case where email is stored in assignedToName
+        if (ticket.assignedToName && ticket.assignedToName.includes('@')) {
+          const userByEmail = users.find(u => u.email === ticket.assignedToName);
+          if (userByEmail) {
+            return { ...ticket, assignedToName: userByEmail.name, assignedToEmail: userByEmail.email };
+          }
+        }
+        return ticket;
+      }));
+    }
+  }, [users]); // Run whenever users array changes
 
   // Notification helper
   const notify = (msg, type = "success") => {
@@ -172,8 +217,9 @@ export default function UserDashboard({ user }) {
   // Assign user to ticket (only for open tickets)
   const assignToUser = async (ticketId, userEmail) => {
     try {
-      await updateTicket(ticketId, { assigned_to_name: userEmail, status: "in-progress" }, token);
-      notify("Ticket assigned and status changed to In Progress");
+      await updateTicket(ticketId, { assigned_to_email: userEmail, status: "in-progress" }, token);
+      const userName = users.find(u => u.email === userEmail)?.name || userEmail;
+      notify(`Assigned to ${userName} and status changed to In Progress`);
       fetchTickets();
     } catch (err) {
       notify("Assignment failed", "error");
@@ -218,6 +264,11 @@ export default function UserDashboard({ user }) {
 
   // Status change handler
   const handleStatusChange = (ticket, newStatus) => {
+
+     if (!canChangeStatus(ticket)) {
+    notify("You don't have permission to change this ticket's status", "error");
+    return;
+  }
     if (newStatus === "resolved") {
       setResolutionPopup(ticket);
       setResolutionData({
@@ -230,21 +281,38 @@ export default function UserDashboard({ user }) {
   };
 
   // Confirm resolution
+  // Confirm resolution
   const confirmResolution = async () => {
     try {
+      // Convert up_time to proper ISO format for SQL Server
+      let upTimeFormatted = resolutionData.upTime;
+      if (upTimeFormatted) {
+        const parsedDate = new Date(upTimeFormatted);
+        if (!isNaN(parsedDate.getTime())) {
+          upTimeFormatted = parsedDate.toISOString();
+        } else {
+          upTimeFormatted = new Date().toISOString();
+        }
+      } else {
+        upTimeFormatted = new Date().toISOString();
+      }
+
       await updateTicket(resolutionPopup.id, {
         status: "resolved",
         root_cause: resolutionData.rootCause,
-        up_time: resolutionData.upTime,
+        up_time: upTimeFormatted,
       }, token);
       notify("Ticket resolved successfully");
       setResolutionPopup(null);
       setResolutionData({ rootCause: "", upTime: "" });
       fetchTickets();
     } catch (err) {
+      console.error("Resolution error:", err);
       notify("Resolution failed", "error");
     }
   };
+
+
 
   const setUpTimeNow = () => {
     setResolutionData(prev => ({
@@ -258,18 +326,26 @@ export default function UserDashboard({ user }) {
     return ticket.reported_by_email === currentUserEmail || ticket.assignedToEmail === currentUserEmail;
   };
 
+  // Check if user can change ticket status
+  const canChangeStatus = (ticket) => {
+    // Open tickets can be assigned by anyone (will trigger assignment logic)
+    if (ticket.status === "open") return true;
+    // For non-open tickets, only reporter or assigned user can change status
+    return ticket.reported_by_email === currentUserEmail || ticket.assignedToEmail === currentUserEmail;
+  };
+
   // Apply date filter
   const applyDateFilter = (ticketsList) => {
     if (dateFilter === "all") return ticketsList;
-    
+
     const { today, yesterday, startOfWeek, startOfMonth, startOfQuarter, startOfYear } = getDateFilters();
-    
+
     return ticketsList.filter(ticket => {
       if (!ticket.createdAt) return false;
       const ticketDate = new Date(ticket.createdAt);
       ticketDate.setHours(0, 0, 0, 0);
-      
-      switch(dateFilter) {
+
+      switch (dateFilter) {
         case "today":
           return ticketDate.getTime() === today.getTime();
         case "yesterday":
@@ -291,20 +367,20 @@ export default function UserDashboard({ user }) {
   // Stats derived from tickets (respects date filter)
   const stats = useMemo(() => {
     const filteredByDate = applyDateFilter(tickets);
-    
+
     const open = filteredByDate.filter(t => t.status === "open").length;
     const progress = filteredByDate.filter(t => t.status === "in-progress").length;
     const resolved = filteredByDate.filter(t => t.status === "resolved").length;
-    
+
     // Risk assessment excluding resolved tickets
     const activeTickets = filteredByDate.filter(t => t.status !== "resolved");
     const highRisk = activeTickets.filter(t => t.riskLevel === "high").length;
     const mediumRisk = activeTickets.filter(t => t.riskLevel === "medium").length;
     const lowRisk = activeTickets.filter(t => t.riskLevel === "low").length;
-    
-    return { 
-      open, progress, resolved, total: filteredByDate.length, 
-      highRisk, mediumRisk, lowRisk, activeTotal: activeTickets.length 
+
+    return {
+      open, progress, resolved, total: filteredByDate.length,
+      highRisk, mediumRisk, lowRisk, activeTotal: activeTickets.length
     };
   }, [tickets, dateFilter]);
 
@@ -324,10 +400,10 @@ export default function UserDashboard({ user }) {
         (t.problemDetails || "").toLowerCase().includes(search.toLowerCase()) ||
         (t.affectedUser || "").toLowerCase().includes(search.toLowerCase())
       );
-    
+
     // Apply date filter
     filteredTickets = applyDateFilter(filteredTickets);
-    
+
     // Apply sorting
     filteredTickets.sort((a, b) => {
       if (sortBy === "date") return new Date(b.date) - new Date(a.date);
@@ -338,7 +414,7 @@ export default function UserDashboard({ user }) {
       }
       return 0;
     });
-    
+
     return filteredTickets;
   }, [tickets, search, filterStatus, sortBy, dateFilter]);
 
@@ -373,9 +449,8 @@ export default function UserDashboard({ user }) {
         {notifications.map((n) => (
           <div
             key={n.id}
-            className={`flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg transform transition-all duration-300 animate-slide-in ${
-              n.type === "success" ? "bg-green-500 text-white" : "bg-red-500 text-white"
-            }`}
+            className={`flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg transform transition-all duration-300 animate-slide-in ${n.type === "success" ? "bg-green-500 text-white" : "bg-red-500 text-white"
+              }`}
           >
             {n.type === "success" ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
             <span className="text-sm font-medium">{n.msg}</span>
@@ -396,7 +471,7 @@ export default function UserDashboard({ user }) {
                 <p className="text-sm text-gray-500">#{resolutionPopup.id} - {resolutionPopup.systemName}</p>
               </div>
             </div>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -411,7 +486,7 @@ export default function UserDashboard({ user }) {
                   required
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Up Time <span className="text-red-500">*</span>
@@ -475,11 +550,10 @@ export default function UserDashboard({ user }) {
 
       {/* STATS CARDS - Clickable */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <div 
+        <div
           onClick={() => handleCardClick("all")}
-          className={`bg-white rounded-xl shadow-sm p-3 border cursor-pointer transition-all hover:shadow-md ${
-            selectedCardFilter === "all" ? "ring-2 ring-blue-500 shadow-md" : ""
-          }`}
+          className={`bg-white rounded-xl shadow-sm p-3 border cursor-pointer transition-all hover:shadow-md ${selectedCardFilter === "all" ? "ring-2 ring-blue-500 shadow-md" : ""
+            }`}
         >
           <div className="flex items-center justify-between">
             <div>
@@ -491,11 +565,10 @@ export default function UserDashboard({ user }) {
             </div>
           </div>
         </div>
-        <div 
+        <div
           onClick={() => handleCardClick("open")}
-          className={`bg-white rounded-xl shadow-sm p-3 border cursor-pointer transition-all hover:shadow-md ${
-            selectedCardFilter === "open" ? "ring-2 ring-red-500 shadow-md" : ""
-          }`}
+          className={`bg-white rounded-xl shadow-sm p-3 border cursor-pointer transition-all hover:shadow-md ${selectedCardFilter === "open" ? "ring-2 ring-red-500 shadow-md" : ""
+            }`}
         >
           <div className="flex items-center justify-between">
             <div>
@@ -507,11 +580,10 @@ export default function UserDashboard({ user }) {
             </div>
           </div>
         </div>
-        <div 
+        <div
           onClick={() => handleCardClick("in-progress")}
-          className={`bg-white rounded-xl shadow-sm p-3 border cursor-pointer transition-all hover:shadow-md ${
-            selectedCardFilter === "in-progress" ? "ring-2 ring-yellow-500 shadow-md" : ""
-          }`}
+          className={`bg-white rounded-xl shadow-sm p-3 border cursor-pointer transition-all hover:shadow-md ${selectedCardFilter === "in-progress" ? "ring-2 ring-yellow-500 shadow-md" : ""
+            }`}
         >
           <div className="flex items-center justify-between">
             <div>
@@ -523,11 +595,10 @@ export default function UserDashboard({ user }) {
             </div>
           </div>
         </div>
-        <div 
+        <div
           onClick={() => handleCardClick("resolved")}
-          className={`bg-white rounded-xl shadow-sm p-3 border cursor-pointer transition-all hover:shadow-md ${
-            selectedCardFilter === "resolved" ? "ring-2 ring-green-500 shadow-md" : ""
-          }`}
+          className={`bg-white rounded-xl shadow-sm p-3 border cursor-pointer transition-all hover:shadow-md ${selectedCardFilter === "resolved" ? "ring-2 ring-green-500 shadow-md" : ""
+            }`}
         >
           <div className="flex items-center justify-between">
             <div>
@@ -635,7 +706,7 @@ export default function UserDashboard({ user }) {
             <option value="risk">Sort by Risk</option>
           </select>
         </div>
-        
+
         {/* Date Filter Buttons */}
         <div className="flex flex-wrap gap-2">
           <Calendar size={16} className="text-gray-400 self-center" />
@@ -643,11 +714,10 @@ export default function UserDashboard({ user }) {
             <button
               key={button.value}
               onClick={() => setDateFilter(button.value)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                dateFilter === button.value
-                  ? "bg-blue-600 text-white shadow-md"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${dateFilter === button.value
+                ? "bg-blue-600 text-white shadow-md"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
             >
               {button.label}
             </button>
@@ -672,7 +742,7 @@ export default function UserDashboard({ user }) {
                 <th className="p-3 text-left font-semibold text-gray-600">Risk</th>
                 <th className="p-3 text-left font-semibold text-gray-600">Status</th>
                 <th className="p-3 text-center font-semibold text-gray-600">Actions</th>
-               </tr>
+              </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
@@ -690,7 +760,7 @@ export default function UserDashboard({ user }) {
                   const StatusIcon = statusConfig[t.status]?.icon || AlertCircle;
                   return (
                     <tr key={t.id} className="border-b border-gray-100 hover:bg-gray-50 transition">
-                      <td className="p-3 text-gray-500">{i + 1}</td>
+                      <td className="p-3 text-gray-500">{t.ticket_sl}</td>
                       <td className="p-3 text-gray-600 whitespace-nowrap">{t.date}</td>
                       <td className="p-3">
                         <div className="flex items-center gap-1.5">
@@ -708,12 +778,16 @@ export default function UserDashboard({ user }) {
                             className="text-sm border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
                           >
                             <option value="">Assign to...</option>
-                            {users.map((u) => (
+                            {users.filter((u, index, self) =>
+                              index === self.findIndex((t) => t.email === u.email)
+                            ).map((u) => (
                               <option key={u.id} value={u.email}>{u.name}</option>
                             ))}
                           </select>
                         ) : (
-                          <span className="text-gray-600">{t.assignedToName || "Unassigned"}</span>
+                          <span className="text-gray-600">
+                            {users.find(u => u.email === t.assignedToEmail)?.name || t.assignedToName || "Unassigned"}
+                          </span>
                         )}
                       </td>
                       <td className="p-3">
@@ -753,7 +827,7 @@ export default function UserDashboard({ user }) {
                             value={t.status}
                             onChange={(e) => handleStatusChange(t, e.target.value)}
                             className="text-xs border-0 bg-transparent focus:ring-1 focus:ring-blue-500 rounded cursor-pointer"
-                            disabled={t.status === "open" && !t.assignedToEmail}
+                            disabled={!canChangeStatus(t)}
                           >
                             <option value="open">Open</option>
                             <option value="in-progress">In Progress</option>
@@ -870,12 +944,16 @@ export default function UserDashboard({ user }) {
                 </div>
                 <div className="bg-gray-50 rounded-lg p-3">
                   <p className="text-xs text-gray-500">Assigned To</p>
-                  <p className="font-medium text-gray-800">{viewTicket.assignedToName || "Unassigned"}</p>
+                  <p className="font-medium text-gray-800">
+                    {viewTicket.assignedToName && viewTicket.assignedToName.includes('@')
+                      ? getUserName(viewTicket.assignedToName)
+                      : (viewTicket.assignedToName || "Unassigned")}
+                  </p>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-3">
+                {/* <div className="bg-gray-50 rounded-lg p-3">
                   <p className="text-xs text-gray-500">Assigned To Email</p>
                   <p className="font-medium text-gray-800">{viewTicket.assignedToEmail || "-"}</p>
-                </div>
+                </div> */}
                 <div className="bg-gray-50 rounded-lg p-3">
                   <p className="text-xs text-gray-500">Report Date</p>
                   <p className="font-medium text-gray-800">{viewTicket.date || "-"}</p>
@@ -897,26 +975,26 @@ export default function UserDashboard({ user }) {
                   <p className="font-medium text-gray-800">{viewTicket.upTime || "-"}</p>
                 </div>
               </div>
-              
+
               <div className="bg-gray-50 rounded-lg p-4 mb-4">
                 <p className="text-xs text-gray-500 mb-2">Problem Details</p>
                 <p className="text-gray-800 whitespace-pre-wrap">{viewTicket.problemDetails || "-"}</p>
               </div>
-              
+
               {viewTicket.rootCause && (
                 <div className="bg-gray-50 rounded-lg p-4 mb-4">
                   <p className="text-xs text-gray-500 mb-2">Root Cause</p>
                   <p className="text-gray-800 whitespace-pre-wrap">{viewTicket.rootCause}</p>
                 </div>
               )}
-              
+
               {viewTicket.resolution && (
                 <div className="bg-gray-50 rounded-lg p-4 mb-4">
                   <p className="text-xs text-gray-500 mb-2">Resolution</p>
                   <p className="text-gray-800 whitespace-pre-wrap">{viewTicket.resolution}</p>
                 </div>
               )}
-              
+
               {viewTicket.remarks && (
                 <div className="bg-gray-50 rounded-lg p-4">
                   <p className="text-xs text-gray-500 mb-2">Remarks</p>
@@ -997,7 +1075,7 @@ export default function UserDashboard({ user }) {
                     <option value="high">High</option>
                   </select>
                 </div>
-                <div>
+                {/* <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                   <select
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1008,7 +1086,7 @@ export default function UserDashboard({ user }) {
                     <option value="in-progress">In Progress</option>
                     <option value="resolved">Resolved</option>
                   </select>
-                </div>
+                </div> */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Down Time</label>
                   <div className="flex gap-2">
@@ -1018,15 +1096,15 @@ export default function UserDashboard({ user }) {
                       onChange={(e) => updateField("downTime", e.target.value)}
                       placeholder="Select or click clock"
                     />
-                    <button
+                    {/* <button
                       onClick={() => setClock("downTime")}
                       className="px-3 bg-gray-100 rounded-lg hover:bg-gray-200 transition text-sm"
                     >
                       Clock
-                    </button>
+                    </button> */}
                   </div>
                 </div>
-                <div>
+                {/* <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Up Time</label>
                   <div className="flex gap-2">
                     <input
@@ -1042,7 +1120,7 @@ export default function UserDashboard({ user }) {
                       Clock
                     </button>
                   </div>
-                </div>
+                </div> */}
               </div>
 
               <div className="mt-4">
