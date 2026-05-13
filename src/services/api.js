@@ -1,5 +1,5 @@
 // src/services/api.js
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_BASE = import.meta.env.VITE_API_URL || 'https://stilt-ardently-recoup.ngrok-free.dev/api';
 
 const request = async (endpoint, method = 'GET', body = null, token = null) => {
     console.log(`Request: ${method} ${endpoint}, token: ${token ? 'present' : 'missing'}`);
