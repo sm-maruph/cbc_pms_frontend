@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend
@@ -202,7 +203,7 @@ export default function UserDashboard({ user }) {
     setNotifications((prev) => [...prev, { id, msg, type }]);
     setTimeout(() => {
       setNotifications((prev) => prev.filter((n) => n.id !== id));
-    }, 3000);
+    }, 1000);
   };
 
   // Update field in edit modal
@@ -265,10 +266,10 @@ export default function UserDashboard({ user }) {
   // Status change handler
   const handleStatusChange = (ticket, newStatus) => {
 
-     if (!canChangeStatus(ticket)) {
-    notify("You don't have permission to change this ticket's status", "error");
-    return;
-  }
+    if (!canChangeStatus(ticket)) {
+      notify("You don't have permission to change this ticket's status", "error");
+      return;
+    }
     if (newStatus === "resolved") {
       setResolutionPopup(ticket);
       setResolutionData({
@@ -761,7 +762,9 @@ export default function UserDashboard({ user }) {
                   return (
                     <tr key={t.id} className="border-b border-gray-100 hover:bg-gray-50 transition">
                       <td className="p-3 text-gray-500">{t.ticket_sl}</td>
-                      <td className="p-3 text-gray-600 whitespace-nowrap">{t.date}</td>
+                      <td className="p-3 text-gray-600 whitespace-nowrap">
+                        {t.downTime ? new Date(t.downTime).toLocaleDateString() : t.date}
+                      </td>
                       <td className="p-3">
                         <div className="flex items-center gap-1.5">
                           <div className="h-6 w-6 bg-blue-100 rounded-full flex items-center justify-center">

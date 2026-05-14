@@ -111,7 +111,7 @@ export default function CreateTicket({ user }) {
     branch: "",
     riskLabel: "LOW",
     pcName: "",
-    date: new Date().toISOString().split("T")[0],
+    date: new Date().toLocaleDateString('en-CA'),
     downTime: getCurrentDateTime(),
   });
 

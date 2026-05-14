@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from "react";
+import { Toaster } from 'react-hot-toast';
+import NotificationsPage from './pages/Notifications';
+
 import {
   BrowserRouter as Router,
   Routes,
@@ -74,6 +77,7 @@ function AppWrapper() {
   return (
     <>
       {isLoggedIn && <Navbar user={user} onLogout={handleLogout} />}
+      <Toaster position="top-right" />
       <ScrollToTop />
       <main className="w-full min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
         <Routes>
@@ -85,6 +89,8 @@ function AppWrapper() {
           {/* ============================== */}
           {isLoggedIn && (
             <>
+              <Route path="/notifications" element={<NotificationsPage user={user} />} />
+
               <Route path="/create-ticket" element={<CreateTicket user={user} />} />
             </>
           )}

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import logo from "../images/cbc_logo.png";
+import NotificationBell from '../NotificationBell';
 
 export default function Navbar({ user, onLogout }) {
   const navigate = useNavigate();
@@ -41,17 +42,17 @@ export default function Navbar({ user, onLogout }) {
 
   const navLinks = isAdmin
     ? [
-        { name: "Dashboard", path: "/admin" },
-        { name: "Create New Tickets", path: "/create-ticket" },
-        { name: "Manage Users", path: "/admin/users" },
-        { name: "Report", path: "/admin/report" },
-      ]
+      { name: "Dashboard", path: "/admin" },
+      { name: "Create New Tickets", path: "/create-ticket" },
+      { name: "Manage Users", path: "/admin/users" },
+      { name: "Report", path: "/admin/report" },
+    ]
     : [
-        { name: "Dashboard", path: "/dashboard" },
-        { name: "My Tickets", path: "/my-tickets" },
-        { name: "Create Ticket", path: "/create-ticket" },
-        { name: "Report", path: "/report" },
-      ];
+      { name: "Dashboard", path: "/dashboard" },
+      { name: "My Tickets", path: "/my-tickets" },
+      { name: "Create Ticket", path: "/create-ticket" },
+      { name: "Report", path: "/report" },
+    ];
 
   const animationStyles = `
     @keyframes slideIn {
@@ -130,7 +131,10 @@ export default function Navbar({ user, onLogout }) {
               </span>
             </div>
           </div>
-
+          <div className="flex items-center gap-3">
+            <NotificationBell user={user} />
+            {/* Existing user menu/dropdown */}
+          </div>
           {/* LOGOUT BUTTON */}
           <button
             onClick={handleLogout}
@@ -157,9 +161,8 @@ export default function Navbar({ user, onLogout }) {
         {/* MOBILE MENU SLIDEOUT */}
         <div
           ref={menuRef}
-          className={`fixed top-0 right-0 h-full w-4/5 max-w-sm bg-gradient-to-b from-slate-900 via-blue-900 to-slate-900 shadow-2xl md:hidden z-40 ${
-            open ? "animate-slide-in" : "animate-slide-out"
-          }`}
+          className={`fixed top-0 right-0 h-full w-4/5 max-w-sm bg-gradient-to-b from-slate-900 via-blue-900 to-slate-900 shadow-2xl md:hidden z-40 ${open ? "animate-slide-in" : "animate-slide-out"
+            }`}
         >
           <div className="p-5 pt-20">
             <div className="mb-5 pb-5 border-b border-white/10">

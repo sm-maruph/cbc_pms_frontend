@@ -102,3 +102,25 @@ export const toggleFavorite = (templateId, token) => request(`/static/favorites/
 // ============================================================
 export const getTicketStats = (token) => request('/stats/tickets', 'GET', null, token);
 export const getRiskStats = (token) => request('/stats/risk', 'GET', null, token);
+
+
+
+// Get user's notifications
+export const getNotifications = async (token, limit = 50, offset = 0) => {
+    return request(`/notifications?limit=${limit}&offset=${offset}`, 'GET', null, token);
+};
+
+// Get unread notification count
+export const getUnreadCount = async (token) => {
+    return request('/notifications/unread-count', 'GET', null, token);
+};
+
+// Mark a single notification as read
+export const markNotificationRead = async (id, token) => {
+    return request(`/notifications/${id}/read`, 'PUT', null, token);
+};
+
+// Mark all notifications as read
+export const markAllNotificationsRead = async (token) => {
+    return request('/notifications/mark-all-read', 'PUT', null, token);
+};
