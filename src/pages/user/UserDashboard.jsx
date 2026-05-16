@@ -178,8 +178,12 @@ export default function UserDashboard({ user }) {
 
 
   // Helper: Format downtime as relative time with color
-  // Helper: Format downtime as relative time with color
-  const getRelativeTime = (downTimeString) => {
+  const getRelativeTime = (downTimeString, status) => {
+    // If ticket is resolved, return neutral background
+    if (status === 'resolved') {
+      return { text: downTimeString, bgColor: 'bg-gray-100', textColor: 'text-gray-500' };
+    }
+
     if (!downTimeString) return { text: 'Not set', bgColor: 'bg-gray-100', textColor: 'text-gray-600' };
 
     // Try to parse the date string
@@ -1002,7 +1006,7 @@ export default function UserDashboard({ user }) {
                       <td className="p-3 text-xs whitespace-nowrap">
                         {t.downTime ? (
                           (() => {
-                            const { text, bgColor, textColor } = getRelativeTime(t.downTime);
+                            const { text, bgColor, textColor } = getRelativeTime(t.downTime, t.status);
                             return (
                               <div className={`flex items-center gap-1 px-2 py-1 rounded-full ${bgColor} ${textColor} w-fit`}>
                                 <Clock size={12} />

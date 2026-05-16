@@ -57,6 +57,9 @@ export default function AdminDashboard({ user }) {
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [deleteType, setDeleteType] = useState(null);
   const [chartTimeRange, setChartTimeRange] = useState('daily'); // daily, weekly, monthly, quarterly, yearly
+  const [selectedCardFilter, setSelectedCardFilter] = useState(null);
+  // Add these with your other state declarations
+  const [dateFilter, setDateFilter] = useState("all");
 
   const token = localStorage.getItem("cbcToken");
 
@@ -166,23 +169,69 @@ export default function AdminDashboard({ user }) {
   }, [tickets, chartTimeRange]);
 
   // Filtered tickets
+  // Filtered tickets (for table)
   const filteredTickets = useMemo(() => {
-    // First apply date range filter
-    const dateFiltered = filterTicketsByDateRange(tickets, chartTimeRange);
+    let filteredTickets = [...tickets];
 
-    // Then apply search, status, risk
-    return dateFiltered.filter(ticket => {
-      const matchesSearch =
+    // Apply date filter first (using same logic as UserDashboard)
+    if (dateFilter !== "all") {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const startOfWeek = new Date(today);
+      const day = today.getDay();
+      const diffToMonday = day === 0 ? 6 : day - 1;
+      startOfWeek.setDate(today.getDate() - diffToMonday);
+      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      const startOfQuarter = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
+      const startOfYear = new Date(today.getFullYear(), 0, 1);
+
+      filteredTickets = filteredTickets.filter(ticket => {
+        if (!ticket.date) return false;
+        const dateParts = ticket.date.split('-');
+        const ticketDate = new Date(
+          parseInt(dateParts[0]),
+          parseInt(dateParts[1]) - 1,
+          parseInt(dateParts[2])
+        );
+        ticketDate.setHours(0, 0, 0, 0);
+
+        switch (dateFilter) {
+          case "today": return ticketDate.getTime() === today.getTime();
+          case "yesterday": return ticketDate.getTime() === yesterday.getTime();
+          case "week": return ticketDate >= startOfWeek && ticketDate <= today;
+          case "month": return ticketDate >= startOfMonth && ticketDate <= today;
+          case "quarter": return ticketDate >= startOfQuarter && ticketDate <= today;
+          case "year": return ticketDate >= startOfYear && ticketDate <= today;
+          default: return true;
+        }
+      });
+    }
+
+    // Apply search filter
+    if (searchTerm) {
+      filteredTickets = filteredTickets.filter(ticket =>
         ticket.system_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         ticket.problem_details?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         ticket.reportedByName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         ticket.affected_user?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        ticket.ticket_sl?.toString().toLowerCase().includes(searchTerm.toLowerCase()); // 👈 ADD ticket number search
-      const matchesStatus = filterStatus === "all" || ticket.status === filterStatus;
-      const matchesRisk = filterRisk === "all" || ticket.risk_label === filterRisk;
-      return matchesSearch && matchesStatus && matchesRisk;
-    });
-  }, [tickets, searchTerm, filterStatus, filterRisk, chartTimeRange]); // 👈 ADD chartTimeRange dependency
+        ticket.ticket_sl?.toString().toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+
+    // Apply status filter
+    if (filterStatus !== "all") {
+      filteredTickets = filteredTickets.filter(ticket => ticket.status === filterStatus);
+    }
+
+    // Apply risk filter
+    if (filterRisk !== "all") {
+      filteredTickets = filteredTickets.filter(ticket => ticket.risk_label === filterRisk);
+    }
+
+    return filteredTickets;
+  }, [tickets, searchTerm, filterStatus, filterRisk, dateFilter]);
 
   // Filtered users
   const filteredUsers = useMemo(() => {
@@ -358,6 +407,12 @@ export default function AdminDashboard({ user }) {
     }
   };
 
+  // Handle card click to filter table
+  const handleCardClick = (status) => {
+    setSelectedCardFilter(status);
+    setFilterStatus(status);
+  };
+
   // Computed statistics from tickets (instead of backend)
   const computedStats = useMemo(() => {
     const total = tickets.length;
@@ -368,6 +423,52 @@ export default function AdminDashboard({ user }) {
     return { totalTickets: total, openTickets: open, inProgressTickets: inProgress, resolvedTickets: resolved, highRiskTickets: highRisk };
   }, [tickets]);
 
+  // Total Stats based on date filter (for cards)
+  // Total Stats based on date filter (for cards) - Same as UserDashboard
+  const totalStats = useMemo(() => {
+    let filteredByDate = [...tickets];
+
+    if (dateFilter !== "all") {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const startOfWeek = new Date(today);
+      const day = today.getDay();
+      const diffToMonday = day === 0 ? 6 : day - 1;
+      startOfWeek.setDate(today.getDate() - diffToMonday);
+      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      const startOfQuarter = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
+      const startOfYear = new Date(today.getFullYear(), 0, 1);
+
+      filteredByDate = filteredByDate.filter(ticket => {
+        if (!ticket.date) return false;
+        const dateParts = ticket.date.split('-');
+        const ticketDate = new Date(
+          parseInt(dateParts[0]),
+          parseInt(dateParts[1]) - 1,
+          parseInt(dateParts[2])
+        );
+        ticketDate.setHours(0, 0, 0, 0);
+
+        switch (dateFilter) {
+          case "today": return ticketDate.getTime() === today.getTime();
+          case "yesterday": return ticketDate.getTime() === yesterday.getTime();
+          case "week": return ticketDate >= startOfWeek && ticketDate <= today;
+          case "month": return ticketDate >= startOfMonth && ticketDate <= today;
+          case "quarter": return ticketDate >= startOfQuarter && ticketDate <= today;
+          case "year": return ticketDate >= startOfYear && ticketDate <= today;
+          default: return true;
+        }
+      });
+    }
+
+    const open = filteredByDate.filter(t => t.status === 'open').length;
+    const inProgress = filteredByDate.filter(t => t.status === 'in-progress').length;
+    const resolved = filteredByDate.filter(t => t.status === 'resolved').length;
+
+    return { total: filteredByDate.length, open, inProgress, resolved };
+  }, [tickets, dateFilter]);
 
   const statusChartData = useMemo(() => {
     const open = filteredTicketsForCharts.filter(t => t.status === 'open').length;
@@ -1117,85 +1218,135 @@ export default function AdminDashboard({ user }) {
           <p className="text-gray-600">Welcome back, <span className="font-semibold">{user?.name}</span></p>
         </div>
 
-        {/* Stats Grid */}
-        {/* <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow p-6 border-l-4 border-blue-600">
-            <p className="text-gray-600 text-sm font-semibold mb-1">Total Tickets</p>
-            <p className="text-4xl font-bold text-gray-900">{stats.totalTickets}</p>
+        {/* STATS CARDS - Clickable */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+          <div
+            onClick={() => handleCardClick("all")}
+            className={`bg-white rounded-xl shadow-sm p-3 border cursor-pointer transition-all hover:shadow-md ${selectedCardFilter === "all" ? "ring-2 ring-blue-500 shadow-md" : ""
+              }`}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-500 text-xs">Total Tickets</p>
+                <p className="text-2xl font-bold text-gray-800">{totalStats.total}</p>
+              </div>
+              <div className="h-10 w-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                <FileText className="text-blue-600" size={20} />
+              </div>
+            </div>
           </div>
-          <div className="bg-white rounded-lg shadow p-6 border-l-4 border-yellow-500">
-            <p className="text-gray-600 text-sm font-semibold mb-1">Open Tickets</p>
-            <p className="text-4xl font-bold text-gray-900">{stats.openTickets}</p>
+          <div
+            onClick={() => handleCardClick("open")}
+            className={`bg-white rounded-xl shadow-sm p-3 border cursor-pointer transition-all hover:shadow-md ${selectedCardFilter === "open" ? "ring-2 ring-red-500 shadow-md" : ""
+              }`}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-500 text-xs">Open</p>
+                <p className="text-2xl font-bold text-red-600">{totalStats.open}</p>
+              </div>
+              <div className="h-10 w-10 bg-red-100 rounded-lg flex items-center justify-center">
+                <AlertCircle className="text-red-600" size={20} />
+              </div>
+            </div>
           </div>
-          <div className="bg-white rounded-lg shadow p-6 border-l-4 border-orange-500">
-            <p className="text-gray-600 text-sm font-semibold mb-1">In Progress</p>
-            <p className="text-4xl font-bold text-gray-900">{stats.inProgressTickets}</p>
+          <div
+            onClick={() => handleCardClick("in-progress")}
+            className={`bg-white rounded-xl shadow-sm p-3 border cursor-pointer transition-all hover:shadow-md ${selectedCardFilter === "in-progress" ? "ring-2 ring-yellow-500 shadow-md" : ""
+              }`}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-500 text-xs">In Progress</p>
+                <p className="text-2xl font-bold text-yellow-600">{totalStats.inProgress}</p>
+              </div>
+              <div className="h-10 w-10 bg-yellow-100 rounded-lg flex items-center justify-center">
+                <Activity className="text-yellow-600" size={20} />
+              </div>
+            </div>
           </div>
-          <div className="bg-white rounded-lg shadow p-6 border-l-4 border-green-600">
-            <p className="text-gray-600 text-sm font-semibold mb-1">Resolved</p>
-            <p className="text-4xl font-bold text-gray-900">{stats.resolvedTickets}</p>
+          <div
+            onClick={() => handleCardClick("resolved")}
+            className={`bg-white rounded-xl shadow-sm p-3 border cursor-pointer transition-all hover:shadow-md ${selectedCardFilter === "resolved" ? "ring-2 ring-green-500 shadow-md" : ""
+              }`}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-500 text-xs">Resolved</p>
+                <p className="text-2xl font-bold text-green-600">{totalStats.resolved}</p>
+              </div>
+              <div className="h-10 w-10 bg-green-100 rounded-lg flex items-center justify-center">
+                <CheckCircle className="text-green-600" size={20} />
+              </div>
+            </div>
           </div>
-          <div className="bg-white rounded-lg shadow p-6 border-l-4 border-red-600">
-            <p className="text-gray-600 text-sm font-semibold mb-1">High Risk</p>
-            <p className="text-4xl font-bold text-gray-900">{stats.highRiskTickets}</p>
-          </div>
-          <div className="bg-white rounded-lg shadow p-6 border-l-4 border-purple-600">
-            <p className="text-gray-600 text-sm font-semibold mb-1">Registered Users</p>
-            <p className="text-4xl font-bold text-gray-900">{users.length}</p>
-          </div>
-        </div> */}
+        </div>
 
         {/* Time Range Filter for Charts */}
+        {/* Date Filter Buttons - Same as UserDashboard */}
         <div className="flex flex-wrap gap-2 mb-4">
           <button
-            onClick={() => setChartTimeRange('daily')}
-            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'daily' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-            title="Last 24 hours"
+            onClick={() => setDateFilter("all")}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${dateFilter === "all"
+              ? "bg-blue-600 text-white shadow-md"
+              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
+          >
+            All
+          </button>
+          <button
+            onClick={() => setDateFilter("today")}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${dateFilter === "today"
+              ? "bg-blue-600 text-white shadow-md"
+              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
           >
             Today
           </button>
           <button
-            onClick={() => setChartTimeRange('yesterday')}
-            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'yesterday' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-            title="Yesterday only"
+            onClick={() => setDateFilter("yesterday")}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${dateFilter === "yesterday"
+              ? "bg-blue-600 text-white shadow-md"
+              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
           >
             Yesterday
           </button>
           <button
-            onClick={() => setChartTimeRange('weekly')}
-            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'weekly' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-            title="Last 7 days"
+            onClick={() => setDateFilter("week")}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${dateFilter === "week"
+              ? "bg-blue-600 text-white shadow-md"
+              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
           >
             This Week
           </button>
           <button
-            onClick={() => setChartTimeRange('monthly')}
-            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'monthly' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-            title="Last 30 days"
+            onClick={() => setDateFilter("month")}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${dateFilter === "month"
+              ? "bg-blue-600 text-white shadow-md"
+              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
           >
             This Month
           </button>
           <button
-            onClick={() => setChartTimeRange('quarterly')}
-            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'quarterly' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-            title="Last 90 days"
+            onClick={() => setDateFilter("quarter")}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${dateFilter === "quarter"
+              ? "bg-blue-600 text-white shadow-md"
+              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
           >
             This Quarter
           </button>
           <button
-            onClick={() => setChartTimeRange('yearly')}
-            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'yearly' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-            title="Last 365 days"
+            onClick={() => setDateFilter("year")}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${dateFilter === "year"
+              ? "bg-blue-600 text-white shadow-md"
+              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
           >
             This Year
-          </button>
-
-          <button
-            onClick={() => setChartTimeRange('previousYear')}
-            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'previousYear' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-            title="Previous year"
-          >
-            Previous Year
           </button>
         </div>
         {/* Pie Charts */}

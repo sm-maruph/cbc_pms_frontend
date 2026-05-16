@@ -7,7 +7,7 @@ const request = async (endpoint, method = 'GET', body = null, token = null) => {
     if (token) headers['Authorization'] = `Bearer ${token}`;
     const options = { method, headers };
     if (body) options.body = JSON.stringify(body);
-    
+
     try {
         const response = await fetch(`${API_BASE}${endpoint}`, options);
         const data = await response.json();
@@ -123,4 +123,17 @@ export const markNotificationRead = async (id, token) => {
 // Mark all notifications as read
 export const markAllNotificationsRead = async (token) => {
     return request('/notifications/mark-all-read', 'PUT', null, token);
+};
+
+
+// services/api.js - Replace the bulk import functions with these
+
+// Bulk import validation
+export const validateBulkTickets = async (ticketsData, token) => {
+    return request('/tickets/bulk-import/validate', 'POST', ticketsData, token);
+};
+
+// Bulk import tickets
+export const bulkImportTickets = async (ticketsData, token) => {
+    return request('/tickets/bulk-import', 'POST', ticketsData, token);
 };

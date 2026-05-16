@@ -4,7 +4,7 @@ import "jspdf-autotable";
 import * as XLSX from "xlsx";
 
 // Import API functions
-import { getReportData } from "../../services/api";
+import { getReportData, bulkImportTickets, validateBulkTickets } from "../../services/api";
 
 export default function Report({ user }) {
   const [loading, setLoading] = useState(false);
@@ -17,25 +17,33 @@ export default function Report({ user }) {
   const [uploadedData, setUploadedData] = useState(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [useUploadedData, setUseUploadedData] = useState(false);
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState(false);
+  const [uploadResults, setUploadResults] = useState(null);
+  const [validationResults, setValidationResults] = useState(null);
+  const [showValidationModal, setShowValidationModal] = useState(false);
+  const [previewData, setPreviewData] = useState([]);  // Add this
+  const [showPreviewModal, setShowPreviewModal] = useState(false);  // Add this
+  const [importConfirmed, setImportConfirmed] = useState(false);  // Add this
 
   const token = localStorage.getItem("cbcToken");
 
   // Fetch report data from API
   const fetchReportData = async (range, startDate = null, endDate = null) => {
     if (!token) return;
-    
+
     setLoading(true);
     try {
       let reportRange = range;
       let sDate = startDate;
       let eDate = endDate;
-      
+
       if (range === "custom" && startDate && endDate) {
         reportRange = "custom";
       }
-      
+
       const data = await getReportData(reportRange, sDate, eDate, token);
-      
+
       if (data && data.tickets) {
         // Transform API data to match the expected format
         const transformedTickets = data.tickets.map(ticket => ({
@@ -63,7 +71,7 @@ export default function Report({ user }) {
           resolution: ticket.resolution,
           remarks: ticket.remarks,
         }));
-        
+
         setTicketsData(transformedTickets);
         setReportData({
           summary: data.summary || calculateSummary(transformedTickets),
@@ -105,23 +113,23 @@ export default function Report({ user }) {
     const inProgressTickets = tickets.filter(t => t.status === "in-progress").length;
     const criticalTickets = tickets.filter(t => t.priority === "HIGH").length;
     const highTickets = tickets.filter(t => t.priority === "HIGH").length;
-    
+
     const totalResponseTime = tickets.reduce((sum, t) => {
       const time = parseInt(t.responseTime) || 0;
       return sum + time;
     }, 0);
-    
+
     const totalResolutionTime = tickets
       .filter(t => t.status === "resolved" && t.resolutionTime !== "Pending")
       .reduce((sum, t) => {
         const time = parseInt(t.resolutionTime) || 0;
         return sum + time;
       }, 0);
-    
+
     const avgResponseTime = totalTickets > 0 ? (totalResponseTime / totalTickets).toFixed(1) : 0;
     const avgResolutionTime = resolvedTickets > 0 ? (totalResolutionTime / resolvedTickets).toFixed(1) : 0;
     const resolutionRate = totalTickets > 0 ? ((resolvedTickets / totalTickets) * 100).toFixed(1) : 0;
-    
+
     return {
       totalTickets,
       resolvedTickets,
@@ -147,59 +155,158 @@ export default function Report({ user }) {
     }
   }, [dateRange, customStartDate, customEndDate, useUploadedData]);
 
+
+
+  // Convert Excel serial date to YYYY-MM-DD format
+  const convertExcelDate = (excelDate) => {
+    if (!excelDate) return null;
+
+    // If it's already a string in YYYY-MM-DD format
+    if (typeof excelDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(excelDate)) {
+      return excelDate;
+    }
+
+    // If it's a number (Excel serial date)
+    if (typeof excelDate === 'number') {
+      // Excel dates: days since 1900-01-01 (accounting for Excel's 1900 leap year bug)
+      const date = new Date((excelDate - 25569) * 86400 * 1000);
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    // Try parsing as date string
+    const parsed = new Date(excelDate);
+    if (!isNaN(parsed.getTime())) {
+      const year = parsed.getFullYear();
+      const month = String(parsed.getMonth() + 1).padStart(2, '0');
+      const day = String(parsed.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    return null;
+  };
   // Handle file upload
-  const handleFileUpload = (event) => {
+  // Handle file upload and send to backend
+  // Handle file upload - Preview first, then confirm
+  // Handle file upload - Preview first, then confirm
+  const handleFileUpload = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
 
+    setUploadProgress(true);
+    setUploadResults(null);
+    setValidationResults(null);
+    setImportConfirmed(false);
+
     const reader = new FileReader();
-    reader.onload = (e) => {
-      const data = new Uint8Array(e.target.result);
-      const workbook = XLSX.read(data, { type: "array" });
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet);
-      
-      // Transform uploaded data to match ticket format
-      const transformedData = jsonData.map((row, index) => ({
-        id: row.id || index + 1,
-        ticket_sl: row.ticket_sl || `UPLOAD-${index + 1}`,
-        title: row.system_name || row.title || "N/A",
-        description: row.problem_details || row.description || "",
-        status: row.status?.toLowerCase() || "open",
-        priority: row.risk_label || row.priority || "MEDIUM",
-        category: row.system_name || "General",
-        createdAt: row.created_at || row.createdAt || new Date().toISOString(),
-        resolvedAt: row.up_time || row.resolvedAt || null,
-        responseTime: row.response_time || row.responseTime || "0h",
-        resolutionTime: row.resolution_time || row.resolutionTime || "Pending",
-        assignedTo: row.assigned_to_name || row.assignedTo || "Unassigned",
-        reportedBy: row.reportedByName || row.reported_by_email || "Unknown",
-        systemName: row.system_name,
-        department: row.department,
-        branch: row.branch,
-        affectedUser: row.affected_user,
-        pcName: row.pc_name,
-        downTime: row.down_time,
-        upTime: row.up_time,
-        rootCause: row.root_cause,
-        resolution: row.resolution,
-        remarks: row.remarks,
-      }));
-      
-      setUploadedData(transformedData);
-      setTicketsData(transformedData);
-      setReportData({
-        summary: calculateSummary(transformedData),
-        tickets: transformedData,
-        dateRange: { start: new Date(), end: new Date() },
-      });
-      setUseUploadedData(true);
-      setShowUploadModal(false);
+    reader.onload = async (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: "array" });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: false }); // Add raw: false to get formatted values
+
+        console.log("📊 Raw data from Excel:", jsonData.length, "records");
+
+        // Transform to match backend expected format
+        const formattedData = jsonData.map((row, idx) => ({
+          id: idx + 1,
+          ticket_sl: row.ticket_sl || row['S\\L'] || null,
+          date: convertExcelDate(row.date || row.Date || null),  // ✅ Use conversion function
+          month: row.month || row.Month || null,
+          reporter_name: row.reporter_name || row['Reported By'] || row.reporterName || null,
+          assigned_to_name: row.assigned_to_name || row['Assigned To'] || row.assignedToName || null,
+          system_name: row.system_name || row['System Name'] || row.systemName || null,
+          problem_details: row.problem_details || row['Problem Details'] || row.problemDetails || null,
+          department: row.department || row.Department || null,
+          branch: row.branch || row.Branch || null,
+          risk_label: row.risk_label || row['Risk Label'] || row.riskLabel || 'MEDIUM',
+          affected_user: row.affected_user || row['Affected user'] || row.affectedUser || null,
+          pc_name: row.pc_name || row['PC Name'] || row.pcName || null,
+          down_time: convertExcelDate(row.down_time || row['Down Time'] || row.downTime || null),  // ✅ Use conversion
+          up_time: convertExcelDate(row.up_time || row['UP Time'] || row.upTime || null),  // ✅ Use conversion
+          resolution: row.resolution || row.Resulation || null,
+          remarks: row.remarks || row.Remarks || null,
+          status: row.status || row.Status || 'pending'
+        }));
+
+        // Store preview data
+        setPreviewData(formattedData);
+
+        // Validate the data
+        const validateResult = await validateBulkTickets(formattedData, token);
+        setValidationResults(validateResult);
+
+        // Close upload modal and open preview modal
+        setShowUploadModal(false);
+        setShowPreviewModal(true);
+
+      } catch (error) {
+        console.error("❌ Upload error:", error);
+        alert(`Failed to parse file: ${error.message}`);
+      } finally {
+        setUploadProgress(false);
+      }
     };
     reader.readAsArrayBuffer(file);
   };
 
+  // Confirm and execute import after preview
+  const confirmImport = async () => {
+    setImportConfirmed(true);
+    setUploadProgress(true);
+    setShowPreviewModal(false);
+
+    try {
+      // Prepare data for import (filter out rows with missing required fields)
+      const importData = previewData.map(row => ({
+        ticket_sl: row.ticket_sl,
+        date: row.date,
+        month: row.month,
+        reporter_name: row.reporter_name,
+        assigned_to_name: row.assigned_to_name,
+        system_name: row.system_name,
+        problem_details: row.problem_details,
+        department: row.department,
+        branch: row.branch,
+        risk_label: row.risk_label,
+        affected_user: row.affected_user,
+        pc_name: row.pc_name,
+        down_time: row.down_time,
+        up_time: row.up_time,
+        resolution: row.resolution,
+        remarks: row.remarks,
+        status: row.status
+      }));
+
+      const importResult = await bulkImportTickets(importData, token);
+      setUploadResults(importResult);
+
+      if (importResult.summary.successful > 0) {
+        // Refresh the report data
+        if (dateRange === "custom" && customStartDate && customEndDate) {
+          fetchReportData("custom", customStartDate, customEndDate);
+        } else if (dateRange !== "custom") {
+          fetchReportData(dateRange);
+        }
+      }
+    } catch (error) {
+      console.error("❌ Import error:", error);
+      alert(`Import failed: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setUploadProgress(false);
+      setImportConfirmed(false);
+      // Clear preview data after 3 seconds
+      setTimeout(() => {
+        setPreviewData([]);
+        setValidationResults(null);
+        setUploadResults(null);
+      }, 3000);
+    }
+  };
   // Switch back to live data
   const useLiveData = () => {
     setUseUploadedData(false);
@@ -211,23 +318,23 @@ export default function Report({ user }) {
   const exportToPDF = () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
-    
+
     doc.setFontSize(20);
     doc.setTextColor(40, 40, 100);
     doc.text("IT Support Ticket Report", pageWidth / 2, 20, { align: "center" });
-    
+
     doc.setFontSize(10);
     doc.setTextColor(100, 100, 100);
     doc.text(`Generated on: ${new Date().toLocaleString()}`, pageWidth / 2, 30, { align: "center" });
     doc.text(`Report Period: ${formatDateRange()}`, pageWidth / 2, 37, { align: "center" });
     doc.text(`Generated by: ${user?.name} (${user?.role})`, pageWidth / 2, 44, { align: "center" });
     doc.text(`Data Source: ${useUploadedData ? "Uploaded File" : "Live Database"}`, pageWidth / 2, 51, { align: "center" });
-    
+
     // Summary Section
     doc.setFontSize(14);
     doc.setTextColor(40, 40, 100);
     doc.text("Executive Summary", 14, 70);
-    
+
     doc.setFontSize(10);
     doc.setTextColor(0, 0, 0);
     const summaryData = [
@@ -240,18 +347,18 @@ export default function Report({ user }) {
       ["Avg Resolution Time", reportData.summary.avgResolutionTime],
       ["Satisfaction Rate", reportData.summary.satisfactionRate],
     ];
-    
+
     let yPos = 78;
     summaryData.forEach((item, index) => {
       doc.text(item[0], 14, yPos + (index * 7));
       doc.text(String(item[1]), 80, yPos + (index * 7));
     });
-    
+
     // Priority Distribution
     doc.setFontSize(14);
     doc.setTextColor(40, 40, 100);
     doc.text("Priority Distribution", 14, 140);
-    
+
     doc.setFontSize(10);
     doc.setTextColor(0, 0, 0);
     const priorityData = [
@@ -259,18 +366,18 @@ export default function Report({ user }) {
       ["High", reportData.summary.highTickets],
       ["Medium/Low", reportData.summary.totalTickets - reportData.summary.criticalTickets - reportData.summary.highTickets],
     ];
-    
+
     priorityData.forEach((item, index) => {
       doc.text(item[0], 14, 155 + (index * 7));
       doc.text(String(item[1]), 80, 155 + (index * 7));
     });
-    
+
     // Tickets Table
     doc.addPage();
     doc.setFontSize(14);
     doc.setTextColor(40, 40, 100);
     doc.text("Detailed Ticket List", 14, 20);
-    
+
     const tableColumn = ["SL No", "System", "Status", "Priority", "Created", "Response Time"];
     const tableRows = ticketsData.slice(0, 20).map(ticket => [
       ticket.ticket_sl || ticket.id,
@@ -280,7 +387,7 @@ export default function Report({ user }) {
       new Date(ticket.createdAt).toLocaleDateString(),
       ticket.responseTime,
     ]);
-    
+
     doc.autoTable({
       head: [tableColumn],
       body: tableRows,
@@ -290,14 +397,14 @@ export default function Report({ user }) {
       headStyles: { fillColor: [40, 40, 100], textColor: 255, fontSize: 9 },
       alternateRowStyles: { fillColor: [245, 245, 245] },
     });
-    
+
     doc.save(`ticket_report_${dateRange}_${new Date().toISOString().split("T")[0]}.pdf`);
   };
 
   // Export to CSV
   const exportToCSV = () => {
     const headers = ["Ticket SL", "System", "Status", "Priority", "Department", "Branch", "Created Date", "Resolved Date", "Response Time", "Resolution Time", "Assigned To", "Reported By"];
-    
+
     const rows = ticketsData.map(ticket => [
       ticket.ticket_sl || ticket.id,
       ticket.systemName || ticket.title,
@@ -312,7 +419,7 @@ export default function Report({ user }) {
       ticket.assignedTo,
       ticket.reportedBy,
     ]);
-    
+
     const csvContent = [headers, ...rows].map(row => row.join(",")).join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
@@ -362,7 +469,7 @@ export default function Report({ user }) {
               </h1>
               <p className="text-gray-600 mt-1">Track and analyze your IT support tickets</p>
             </div>
-            
+
             {/* Export Buttons */}
             {reportData && (
               <div className="flex gap-3">
@@ -416,7 +523,7 @@ export default function Report({ user }) {
               </div>
             )}
           </div>
-          
+
           {/* Data Source Indicator */}
           {useUploadedData && (
             <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs">
@@ -459,6 +566,265 @@ export default function Report({ user }) {
           </div>
         )}
 
+
+        {/* Validation Results Modal */}
+        {showValidationModal && validationResults && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto p-6 shadow-2xl">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-semibold text-gray-800">
+                  ⚠️ Validation Issues Found
+                </h3>
+                <button onClick={() => setShowValidationModal(false)} className="text-gray-500 hover:text-gray-700">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="mb-4 p-3 bg-red-50 rounded-lg">
+                <p className="text-red-700 font-semibold">
+                  {validationResults.summary.invalidCount} invalid records found
+                </p>
+                <p className="text-sm text-red-600">
+                  Valid records: {validationResults.summary.validCount} |
+                  Total: {validationResults.summary.total}
+                </p>
+              </div>
+
+              <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                {validationResults.invalid.map((item, idx) => (
+                  <div key={idx} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <p className="font-semibold text-sm">
+                      Row {item.row}: {item.ticket_sl || 'New Ticket'}
+                    </p>
+                    <p className="text-xs text-gray-500">Reporter: {item.reporter}</p>
+                    <div className="mt-2">
+                      {item.errors.map((err, errIdx) => (
+                        <p key={errIdx} className="text-xs text-red-600">• {err}</p>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 flex gap-3">
+                <button
+                  onClick={() => setShowValidationModal(false)}
+                  className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Preview Modal - Show data before import */}
+        {showPreviewModal && previewData.length > 0 && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl max-w-[95vw] w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-semibold text-gray-800">📋 Preview Data Before Import</h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Review the data below. Only records with valid Problem Details will be imported.
+                  </p>
+                </div>
+                <button onClick={() => setShowPreviewModal(false)} className="p-2 hover:bg-gray-100 rounded-lg transition">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="p-6">
+                {/* Summary Cards */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                  <div className="bg-blue-50 rounded-lg p-4 text-center">
+                    <p className="text-2xl font-bold text-blue-600">{previewData.length}</p>
+                    <p className="text-sm text-blue-700">Total Records</p>
+                  </div>
+                  <div className="bg-green-50 rounded-lg p-4 text-center">
+                    <p className="text-2xl font-bold text-green-600">
+                      {previewData.filter(r => r.problem_details && r.problem_details.trim()).length}
+                    </p>
+                    <p className="text-sm text-green-700">Valid Records</p>
+                  </div>
+                  <div className="bg-red-50 rounded-lg p-4 text-center">
+                    <p className="text-2xl font-bold text-red-600">
+                      {previewData.filter(r => !r.problem_details || !r.problem_details.trim()).length}
+                    </p>
+                    <p className="text-sm text-red-700">Invalid Records</p>
+                  </div>
+                  <div className="bg-purple-50 rounded-lg p-4 text-center">
+                    <p className="text-2xl font-bold text-purple-600">
+                      {validationResults?.summary?.validCount || 0}
+                    </p>
+                    <p className="text-sm text-purple-700">Validated</p>
+                  </div>
+                  <div className="bg-orange-50 rounded-lg p-4 text-center">
+                    <p className="text-2xl font-bold text-orange-600">
+                      {previewData.filter(r => r.ticket_sl).length}
+                    </p>
+                    <p className="text-sm text-orange-700">With Ticket SL</p>
+                  </div>
+                </div>
+
+                {/* Data Table Preview - ALL COLUMNS */}
+                <div className="border border-gray-200 rounded-lg overflow-hidden mb-6">
+                  <div className="overflow-x-auto max-h-[500px]">
+                    <table className="min-w-full divide-y divide-gray-200 text-sm">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">#</th>
+                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ticket SL</th>
+                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Month</th>
+                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reporter</th>
+                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Assigned To</th>
+                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">System</th>
+                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Problem Details</th>
+                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
+                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Branch</th>
+                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Risk</th>
+                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Affected User</th>
+                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">PC Name</th>
+                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Down Time</th>
+                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Up Time</th>
+                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Resolution</th>
+                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {previewData.slice(0, 50).map((row, idx) => (
+                          <tr key={idx} className={!row.problem_details ? 'bg-red-50' : 'hover:bg-gray-50'}>
+                            <td className="px-3 py-3 text-xs text-gray-500">{idx + 1}</td>
+                            <td className="px-3 py-3 text-xs font-mono text-gray-900">
+                              {row.ticket_sl || <span className="text-gray-400">Auto</span>}
+                            </td>
+                            <td className="px-3 py-3 text-xs text-gray-600">
+                              {row.date ? row.date : (row.rawDate ? 'Invalid date' : '-')}
+                            </td>
+                            <td className="px-3 py-3 text-xs text-gray-600">{row.month || '-'}</td>
+                            <td className="px-3 py-3 text-xs text-gray-600">
+                              {row.reporter_name || <span className="text-gray-400">Will use admin</span>}
+                            </td>
+                            <td className="px-3 py-3 text-xs text-gray-600">{row.assigned_to_name || '-'}</td>
+                            <td className="px-3 py-3 text-xs text-gray-600">{row.system_name || '-'}</td>
+                            <td className="px-3 py-3 text-xs max-w-xs truncate">
+                              {row.problem_details ? (
+                                <span className="text-green-700" title={row.problem_details}>
+                                  {row.problem_details.substring(0, 40)}...
+                                </span>
+                              ) : (
+                                <span className="text-red-500 font-medium">MISSING</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-3 text-xs text-gray-600">{row.department || '-'}</td>
+                            <td className="px-3 py-3 text-xs text-gray-600">{row.branch || '-'}</td>
+                            <td className="px-3 py-3">
+                              <span className={`px-2 py-0.5 text-xs rounded-full ${row.risk_label === 'HIGH' ? 'bg-red-100 text-red-800' :
+                                row.risk_label === 'MEDIUM' ? 'bg-yellow-100 text-yellow-800' :
+                                  'bg-green-100 text-green-800'
+                                }`}>
+                                {row.risk_label || 'MEDIUM'}
+                              </span>
+                            </td>
+                            <td className="px-3 py-3 text-xs text-gray-600">{row.affected_user || '-'}</td>
+                            <td className="px-3 py-3 text-xs text-gray-600">{row.pc_name || '-'}</td>
+                            <td className="px-3 py-3 text-xs text-gray-600">{row.down_time || '-'}</td>
+                            <td className="px-3 py-3 text-xs text-gray-600">{row.up_time || '-'}</td>
+                            <td className="px-3 py-3 text-xs text-gray-600 max-w-xs truncate">
+                              {row.resolution || '-'}
+                            </td>
+                            <td className="px-3 py-3">
+                              <span className={`px-2 py-0.5 text-xs rounded-full ${row.status === 'resolved' ? 'bg-green-100 text-green-800' :
+                                row.status === 'in-progress' ? 'bg-yellow-100 text-yellow-800' :
+                                  'bg-gray-100 text-gray-800'
+                                }`}>
+                                {row.status || 'pending'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {previewData.length > 50 && (
+                      <div className="p-3 text-center text-sm text-gray-500 bg-gray-50">
+                        + {previewData.length - 50} more records (scroll to see all)
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Column Legend */}
+                <div className="mb-6 p-3 bg-gray-50 rounded-lg">
+                  <h4 className="text-xs font-semibold text-gray-600 mb-2">📌 Column Legend:</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-gray-500">
+                    <span>🟢 Green text = Valid record</span>
+                    <span>🔴 Red background = Missing Problem Details</span>
+                    <span>🟡 Yellow = Will be auto-generated</span>
+                    <span>⚪ Auto = System will generate</span>
+                  </div>
+                </div>
+
+                {/* Validation Errors Summary */}
+                {validationResults?.invalid?.length > 0 && (
+                  <div className="mb-6 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                    <h4 className="font-semibold text-yellow-800 mb-2">⚠️ Validation Warnings</h4>
+                    <p className="text-sm text-yellow-700 mb-2">
+                      {validationResults.summary.invalidCount} records have issues and will be skipped:
+                    </p>
+                    <div className="max-h-32 overflow-y-auto">
+                      {validationResults.invalid.slice(0, 10).map((err, idx) => (
+                        <p key={idx} className="text-xs text-yellow-600">
+                          • Row {err.row}: {err.errors.join(', ')}
+                        </p>
+                      ))}
+                      {validationResults.invalid.length > 10 && (
+                        <p className="text-xs text-yellow-600 mt-1">
+                          + {validationResults.invalid.length - 10} more issues
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex gap-3">
+                  <button
+                    onClick={confirmImport}
+                    className="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Confirm Import ({previewData.filter(r => r.problem_details).length} records)
+                  </button>
+                  <button
+                    onClick={() => setShowPreviewModal(false)}
+                    className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Upload Progress Indicator */}
+        {uploadProgress && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-white rounded-2xl p-8 text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+              <p className="text-gray-700">Processing upload...</p>
+              <p className="text-sm text-gray-500 mt-2">Please wait</p>
+            </div>
+          </div>
+        )}
+
         {/* Time Frame Selector */}
         <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
           <label className="block text-sm font-semibold text-gray-700 mb-3">Select Time Frame</label>
@@ -472,11 +838,10 @@ export default function Report({ user }) {
                   else setShowCustomPicker(true);
                   if (!useUploadedData) setUseUploadedData(false);
                 }}
-                className={`flex items-center gap-2 px-5 py-2 rounded-lg transition-all duration-200 ${
-                  dateRange === tf.value
-                    ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                }`}
+                className={`flex items-center gap-2 px-5 py-2 rounded-lg transition-all duration-200 ${dateRange === tf.value
+                  ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
               >
                 <span>{tf.icon}</span>
                 <span>{tf.label}</span>
@@ -659,20 +1024,18 @@ export default function Report({ user }) {
                         <td className="px-6 py-4 text-sm font-mono text-gray-900">{ticket.ticket_sl || ticket.id}</td>
                         <td className="px-6 py-4 text-sm text-gray-600">{ticket.systemName || ticket.title}</td>
                         <td className="px-6 py-4">
-                          <span className={`px-2 py-1 text-xs rounded-full ${
-                            ticket.status === "resolved" ? "bg-green-100 text-green-800" :
+                          <span className={`px-2 py-1 text-xs rounded-full ${ticket.status === "resolved" ? "bg-green-100 text-green-800" :
                             ticket.status === "in-progress" ? "bg-yellow-100 text-yellow-800" :
-                            "bg-red-100 text-red-800"
-                          }`}>
+                              "bg-red-100 text-red-800"
+                            }`}>
                             {ticket.status}
                           </span>
                         </td>
                         <td className="px-6 py-4">
-                          <span className={`px-2 py-1 text-xs rounded-full ${
-                            ticket.priority === "HIGH" ? "bg-red-100 text-red-800" :
+                          <span className={`px-2 py-1 text-xs rounded-full ${ticket.priority === "HIGH" ? "bg-red-100 text-red-800" :
                             ticket.priority === "MEDIUM" ? "bg-orange-100 text-orange-800" :
-                            "bg-blue-100 text-blue-800"
-                          }`}>
+                              "bg-blue-100 text-blue-800"
+                            }`}>
                             {ticket.priority}
                           </span>
                         </td>
@@ -684,6 +1047,46 @@ export default function Report({ user }) {
                 </table>
               </div>
             </div>
+
+            {/* Import Results */}
+            {uploadResults && !showValidationModal && (
+              <div className="mt-6 bg-white rounded-2xl shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-800">Import Results</h3>
+                </div>
+                <div className="p-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div className="bg-green-50 rounded-lg p-4 text-center">
+                      <p className="text-2xl font-bold text-green-600">{uploadResults.summary?.successful || 0}</p>
+                      <p className="text-sm text-green-700">Successful</p>
+                    </div>
+                    <div className="bg-red-50 rounded-lg p-4 text-center">
+                      <p className="text-2xl font-bold text-red-600">{uploadResults.summary?.failed || 0}</p>
+                      <p className="text-sm text-red-700">Failed</p>
+                    </div>
+                    <div className="bg-blue-50 rounded-lg p-4 text-center">
+                      <p className="text-2xl font-bold text-blue-600">{uploadResults.summary?.success_rate || '0'}%</p>
+                      <p className="text-sm text-blue-700">Success Rate</p>
+                    </div>
+                  </div>
+                  {uploadResults.failed?.length > 0 && (
+                    <details className="mt-4">
+                      <summary className="cursor-pointer text-sm font-semibold text-red-600">
+                        View Failed Records ({uploadResults.failed.length})
+                      </summary>
+                      <div className="mt-2 max-h-60 overflow-y-auto">
+                        {uploadResults.failed.map((fail, idx) => (
+                          <div key={idx} className="p-2 bg-red-50 rounded mb-2 text-sm">
+                            <p><strong>Ticket:</strong> {fail.ticket_sl}</p>
+                            <p><strong>Error:</strong> {fail.error}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
