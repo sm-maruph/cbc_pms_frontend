@@ -114,7 +114,8 @@ export default function UserDashboard({ user }) {
     reportedByName: apiTicket.reportedByName || apiTicket.reporter_name || "",
     assignedToName: apiTicket.assigned_to_name || "Unassigned",  // ✅ Just store raw value first
     assignedToEmail: apiTicket.assigned_to_email || "",
-    downTime: apiTicket.down_time ? new Date(apiTicket.down_time).toLocaleString() : "",
+    // Store the raw date string without converting to locale string
+    downTime: apiTicket.down_time || "",
     upTime: apiTicket.up_time ? new Date(apiTicket.up_time).toLocaleString() : "",
     date: apiTicket.date ? new Date(apiTicket.date).toISOString().split("T")[0] : "",
     createdAt: apiTicket.created_at ? new Date(apiTicket.created_at) : null,
@@ -176,6 +177,71 @@ export default function UserDashboard({ user }) {
   }, [token]);
 
 
+  // Helper: Format downtime as relative time with color
+  // Helper: Format downtime as relative time with color
+  const getRelativeTime = (downTimeString) => {
+    if (!downTimeString) return { text: 'Not set', bgColor: 'bg-gray-100', textColor: 'text-gray-600' };
+
+    // Try to parse the date string
+    let downTime;
+    try {
+      // Handle different date formats
+      if (typeof downTimeString === 'string') {
+        // Replace space with T for ISO format compatibility
+        const normalized = downTimeString.replace(' ', 'T');
+        downTime = new Date(normalized);
+      } else {
+        downTime = new Date(downTimeString);
+      }
+
+      // Check if date is valid
+      if (isNaN(downTime.getTime())) {
+        console.error('Invalid date:', downTimeString);
+        return { text: 'Invalid date', bgColor: 'bg-gray-100', textColor: 'text-gray-600' };
+      }
+    } catch (e) {
+      console.error('Date parsing error:', e);
+      return { text: 'Invalid date', bgColor: 'bg-gray-100', textColor: 'text-gray-600' };
+    }
+
+    const now = new Date();
+    const diffMs = now - downTime;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    let text = '';
+    let bgColor = '';
+    let textColor = '';
+
+    // Determine text (ensure non-negative values)
+    if (diffMins < 0) {
+      text = 'Just now';
+    } else if (diffMins < 1) {
+      text = 'Just now';
+    } else if (diffMins < 60) {
+      text = `${diffMins} min${diffMins > 1 ? 's' : ''} ago`;
+    } else if (diffHours < 24) {
+      text = `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    } else {
+      text = `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    }
+
+    // Determine color based on age (using positive diffMins)
+    const ageMins = Math.max(0, diffMins);
+    if (ageMins <= 5) {
+      bgColor = 'bg-green-100';
+      textColor = 'text-green-700';
+    } else if (ageMins <= 30) {
+      bgColor = 'bg-orange-100';
+      textColor = 'text-orange-700';
+    } else {
+      bgColor = 'bg-red-100';
+      textColor = 'text-red-700';
+    }
+
+    return { text, bgColor, textColor };
+  };
   // Update assigned names when users are loaded (fixes the email display issue)
   useEffect(() => {
     if (users.length > 0 && tickets.length > 0) {
@@ -335,15 +401,56 @@ export default function UserDashboard({ user }) {
     return ticket.reported_by_email === currentUserEmail || ticket.assignedToEmail === currentUserEmail;
   };
 
-  // Apply date filter
+  // Apply date filter based on creation date
+  // Helper: Get start of day for any date
+  const startOfDay = (date) => {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+
+  // Helper: Get end of day for any date
+  const endOfDay = (date) => {
+    const d = new Date(date);
+    d.setHours(23, 59, 59, 999);
+    return d;
+  };
+
+  // Apply date filter based on ticket's date field (not createdAt)
   const applyDateFilter = (ticketsList) => {
     if (dateFilter === "all") return ticketsList;
 
-    const { today, yesterday, startOfWeek, startOfMonth, startOfQuarter, startOfYear } = getDateFilters();
+    const now = new Date();
+    const today = startOfDay(now);
+    const yesterday = startOfDay(new Date(now.setDate(now.getDate() - 1)));
+    now.setDate(now.getDate() + 1); // Restore
+
+    // Start of current week (Monday)
+    const startOfWeek = new Date(today);
+    const day = today.getDay();
+    const diffToMonday = day === 0 ? 6 : day - 1;
+    startOfWeek.setDate(today.getDate() - diffToMonday);
+
+    // Start of current month
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+    // Start of current quarter
+    const startOfQuarter = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
+
+    // Start of current year
+    const startOfYear = new Date(today.getFullYear(), 0, 1);
 
     return ticketsList.filter(ticket => {
-      if (!ticket.createdAt) return false;
-      const ticketDate = new Date(ticket.createdAt);
+      // Use the date field (which is the ticket's date) for filtering
+      if (!ticket.date) return false;
+
+      // Parse the ticket date (format: YYYY-MM-DD)
+      const ticketDateParts = ticket.date.split('-');
+      const ticketDate = new Date(
+        parseInt(ticketDateParts[0]),
+        parseInt(ticketDateParts[1]) - 1,
+        parseInt(ticketDateParts[2])
+      );
       ticketDate.setHours(0, 0, 0, 0);
 
       switch (dateFilter) {
@@ -352,13 +459,13 @@ export default function UserDashboard({ user }) {
         case "yesterday":
           return ticketDate.getTime() === yesterday.getTime();
         case "week":
-          return ticketDate >= startOfWeek;
+          return ticketDate >= startOfWeek && ticketDate <= today;
         case "month":
-          return ticketDate >= startOfMonth;
+          return ticketDate >= startOfMonth && ticketDate <= today;
         case "quarter":
-          return ticketDate >= startOfQuarter;
+          return ticketDate >= startOfQuarter && ticketDate <= today;
         case "year":
-          return ticketDate >= startOfYear;
+          return ticketDate >= startOfYear && ticketDate <= today;
         default:
           return true;
       }
@@ -366,25 +473,61 @@ export default function UserDashboard({ user }) {
   };
 
   // Stats derived from tickets (respects date filter)
+  // Stats derived from tickets (respects date filter)
   const stats = useMemo(() => {
-    const filteredByDate = applyDateFilter(tickets);
+    // First filter by date
+    let filteredTickets = [...tickets];
 
-    const open = filteredByDate.filter(t => t.status === "open").length;
-    const progress = filteredByDate.filter(t => t.status === "in-progress").length;
-    const resolved = filteredByDate.filter(t => t.status === "resolved").length;
+    if (dateFilter !== "all") {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
 
-    // Risk assessment excluding resolved tickets
-    const activeTickets = filteredByDate.filter(t => t.status !== "resolved");
+      const startOfWeek = new Date(today);
+      const day = today.getDay();
+      const diffToMonday = day === 0 ? 6 : day - 1;
+      startOfWeek.setDate(today.getDate() - diffToMonday);
+
+      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      const startOfQuarter = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
+      const startOfYear = new Date(today.getFullYear(), 0, 1);
+
+      filteredTickets = filteredTickets.filter(ticket => {
+        if (!ticket.date) return false;
+        const dateParts = ticket.date.split('-');
+        const ticketDate = new Date(
+          parseInt(dateParts[0]),
+          parseInt(dateParts[1]) - 1,
+          parseInt(dateParts[2])
+        );
+        ticketDate.setHours(0, 0, 0, 0);
+
+        switch (dateFilter) {
+          case "today": return ticketDate.getTime() === today.getTime();
+          case "yesterday": return ticketDate.getTime() === yesterday.getTime();
+          case "week": return ticketDate >= startOfWeek && ticketDate <= today;
+          case "month": return ticketDate >= startOfMonth && ticketDate <= today;
+          case "quarter": return ticketDate >= startOfQuarter && ticketDate <= today;
+          case "year": return ticketDate >= startOfYear && ticketDate <= today;
+          default: return true;
+        }
+      });
+    }
+
+    const open = filteredTickets.filter(t => t.status === "open").length;
+    const progress = filteredTickets.filter(t => t.status === "in-progress").length;
+    const resolved = filteredTickets.filter(t => t.status === "resolved").length;
+    const activeTickets = filteredTickets.filter(t => t.status !== "resolved");
     const highRisk = activeTickets.filter(t => t.riskLevel === "high").length;
     const mediumRisk = activeTickets.filter(t => t.riskLevel === "medium").length;
     const lowRisk = activeTickets.filter(t => t.riskLevel === "low").length;
 
     return {
-      open, progress, resolved, total: filteredByDate.length,
+      open, progress, resolved, total: filteredTickets.length,
       highRisk, mediumRisk, lowRisk, activeTotal: activeTickets.length
     };
   }, [tickets, dateFilter]);
-
   // Handle card click to filter table
   const handleCardClick = (status) => {
     setSelectedCardFilter(status);
@@ -393,21 +536,77 @@ export default function UserDashboard({ user }) {
 
   // Filtered and sorted tickets
   const filtered = useMemo(() => {
-    let filteredTickets = tickets
-      .filter((t) => filterStatus === "all" || t.status === filterStatus)
-      .filter((t) =>
+    let filteredTickets = [...tickets];
+
+    // Apply search filter
+    if (search) {
+      filteredTickets = filteredTickets.filter(t =>
         (t.systemName || "").toLowerCase().includes(search.toLowerCase()) ||
         (t.reportedByName || "").toLowerCase().includes(search.toLowerCase()) ||
         (t.problemDetails || "").toLowerCase().includes(search.toLowerCase()) ||
         (t.affectedUser || "").toLowerCase().includes(search.toLowerCase())
       );
+    }
 
-    // Apply date filter
-    filteredTickets = applyDateFilter(filteredTickets);
+    // Apply status filter
+    if (filterStatus !== "all") {
+      filteredTickets = filteredTickets.filter(t => t.status === filterStatus);
+    }
+
+    // Apply date filter using the date field
+    if (dateFilter !== "all") {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+
+      const startOfWeek = new Date(today);
+      const day = today.getDay();
+      const diffToMonday = day === 0 ? 6 : day - 1;
+      startOfWeek.setDate(today.getDate() - diffToMonday);
+
+      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      const startOfQuarter = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
+      const startOfYear = new Date(today.getFullYear(), 0, 1);
+
+      filteredTickets = filteredTickets.filter(ticket => {
+        if (!ticket.date) return false;
+
+        // Parse ticket date (format: YYYY-MM-DD)
+        const dateParts = ticket.date.split('-');
+        const ticketDate = new Date(
+          parseInt(dateParts[0]),
+          parseInt(dateParts[1]) - 1,
+          parseInt(dateParts[2])
+        );
+        ticketDate.setHours(0, 0, 0, 0);
+
+        switch (dateFilter) {
+          case "today":
+            return ticketDate.getTime() === today.getTime();
+          case "yesterday":
+            return ticketDate.getTime() === yesterday.getTime();
+          case "week":
+            return ticketDate >= startOfWeek && ticketDate <= today;
+          case "month":
+            return ticketDate >= startOfMonth && ticketDate <= today;
+          case "quarter":
+            return ticketDate >= startOfQuarter && ticketDate <= today;
+          case "year":
+            return ticketDate >= startOfYear && ticketDate <= today;
+          default:
+            return true;
+        }
+      });
+    }
 
     // Apply sorting
     filteredTickets.sort((a, b) => {
-      if (sortBy === "date") return new Date(b.date) - new Date(a.date);
+      if (sortBy === "date") {
+        const dateA = new Date(a.date);
+        const dateB = new Date(b.date);
+        return dateB - dateA;
+      }
       if (sortBy === "status") return a.status.localeCompare(b.status);
       if (sortBy === "risk") {
         const riskOrder = { high: 3, medium: 2, low: 1 };
@@ -762,9 +961,7 @@ export default function UserDashboard({ user }) {
                   return (
                     <tr key={t.id} className="border-b border-gray-100 hover:bg-gray-50 transition">
                       <td className="p-3 text-gray-500">{t.ticket_sl}</td>
-                      <td className="p-3 text-gray-600 whitespace-nowrap">
-                        {t.downTime ? new Date(t.downTime).toLocaleDateString() : t.date}
-                      </td>
+                      <td className="p-3 text-gray-600 whitespace-nowrap">{new Date(t.date).toLocaleDateString()}</td>
                       <td className="p-3">
                         <div className="flex items-center gap-1.5">
                           <div className="h-6 w-6 bg-blue-100 rounded-full flex items-center justify-center">
@@ -802,13 +999,23 @@ export default function UserDashboard({ user }) {
                       <td className="p-3 text-gray-600 max-w-[180px] truncate" title={t.problemDetails}>
                         {t.problemDetails}
                       </td>
-                      <td className="p-3 text-gray-500 text-xs whitespace-nowrap">
+                      <td className="p-3 text-xs whitespace-nowrap">
                         {t.downTime ? (
-                          <div className="flex items-center gap-1">
+                          (() => {
+                            const { text, bgColor, textColor } = getRelativeTime(t.downTime);
+                            return (
+                              <div className={`flex items-center gap-1 px-2 py-1 rounded-full ${bgColor} ${textColor} w-fit`}>
+                                <Clock size={12} />
+                                <span className="font-medium">{text}</span>
+                              </div>
+                            );
+                          })()
+                        ) : (
+                          <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-gray-100 text-gray-500 w-fit">
                             <Clock size={12} />
-                            {t.downTime}
+                            <span>Not set</span>
                           </div>
-                        ) : "-"}
+                        )}
                       </td>
                       <td className="p-3 text-gray-500 text-xs whitespace-nowrap">
                         {t.upTime ? (
@@ -971,7 +1178,18 @@ export default function UserDashboard({ user }) {
                 </div>
                 <div className="bg-gray-50 rounded-lg p-3">
                   <p className="text-xs text-gray-500">Down Time</p>
-                  <p className="font-medium text-gray-800">{viewTicket.downTime || "-"}</p>
+                  {viewTicket.downTime ? (
+                    (() => {
+                      const { text, bgColor, textColor } = getRelativeTime(viewTicket.downTime);
+                      return (
+                        <p className={`inline-block px-2 py-1 rounded-full text-sm font-medium mt-1 ${bgColor} ${textColor}`}>
+                          {text}
+                        </p>
+                      );
+                    })()
+                  ) : (
+                    <p className="font-medium text-gray-800 mt-1">-</p>
+                  )}
                 </div>
                 <div className="bg-gray-50 rounded-lg p-3">
                   <p className="text-xs text-gray-500">Up Time</p>

@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import {
   UserPlus, Edit, Trash2, Search, Filter, X, CheckCircle, AlertCircle,
   Clock, Server, User, FileText, Plus, Eye, Save, ChevronLeft, ChevronRight,
-  Users, Ticket, Database, MapPin, Layout, Settings, Shield, Star, TrendingUp
+  Users, Ticket, Database, MapPin, Layout, Settings, Shield, Star, TrendingUp, Activity,
 } from "lucide-react";
 
 import {
@@ -104,27 +104,60 @@ export default function AdminDashboard({ user }) {
   // Helper to filter tickets based on selected time range
   const filterTicketsByDateRange = (tickets, range) => {
     const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     let startDate;
+    let endDate = today; // for all ranges, end today
+
     switch (range) {
       case 'daily':
-        startDate = new Date(now.setHours(0, 0, 0, 0));
+        startDate = today;
+        break;
+      case 'yesterday':
+        startDate = new Date(today);
+        startDate.setDate(today.getDate() - 1);
+        endDate = startDate; // only yesterday
         break;
       case 'weekly':
-        startDate = new Date(now.setDate(now.getDate() - 7));
+        startDate = new Date(today);
+        startDate.setDate(today.getDate() - 7);
         break;
       case 'monthly':
-        startDate = new Date(now.setMonth(now.getMonth() - 1));
+        startDate = new Date(today);
+        startDate.setMonth(today.getMonth() - 1);
         break;
       case 'quarterly':
-        startDate = new Date(now.setMonth(now.getMonth() - 3));
+        startDate = new Date(today);
+        startDate.setMonth(today.getMonth() - 3);
         break;
       case 'yearly':
-        startDate = new Date(now.setFullYear(now.getFullYear() - 1));
+        startDate = new Date(today);
+        startDate.setFullYear(today.getFullYear() - 1);
+        break;
+      case 'previousYear':
+        startDate = new Date(today);
+        startDate.setFullYear(today.getFullYear() - 1);
+        startDate.setMonth(0, 1); // Jan 1 of previous year
+        endDate = new Date(today);
+        endDate.setFullYear(today.getFullYear() - 1);
+        endDate.setMonth(11, 31); // Dec 31 of previous year
         break;
       default:
-        startDate = new Date(now.setHours(0, 0, 0, 0));
+        startDate = today;
     }
-    return tickets.filter(ticket => new Date(ticket.date) >= startDate);
+
+    return tickets.filter(ticket => {
+      if (!ticket.date) return false;
+      const ticketDateParts = ticket.date.split('-');
+      const ticketDate = new Date(
+        parseInt(ticketDateParts[0]),
+        parseInt(ticketDateParts[1]) - 1,
+        parseInt(ticketDateParts[2])
+      );
+      if (range === 'yesterday' || range === 'previousYear') {
+        return ticketDate >= startDate && ticketDate <= endDate;
+      }
+      return ticketDate >= startDate && ticketDate <= today;
+    });
   };
 
 
@@ -134,17 +167,22 @@ export default function AdminDashboard({ user }) {
 
   // Filtered tickets
   const filteredTickets = useMemo(() => {
-    return tickets.filter(ticket => {
+    // First apply date range filter
+    const dateFiltered = filterTicketsByDateRange(tickets, chartTimeRange);
+
+    // Then apply search, status, risk
+    return dateFiltered.filter(ticket => {
       const matchesSearch =
         ticket.system_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         ticket.problem_details?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         ticket.reportedByName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        ticket.affected_user?.toLowerCase().includes(searchTerm.toLowerCase());
+        ticket.affected_user?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        ticket.ticket_sl?.toString().toLowerCase().includes(searchTerm.toLowerCase()); // 👈 ADD ticket number search
       const matchesStatus = filterStatus === "all" || ticket.status === filterStatus;
       const matchesRisk = filterRisk === "all" || ticket.risk_label === filterRisk;
       return matchesSearch && matchesStatus && matchesRisk;
     });
-  }, [tickets, searchTerm, filterStatus, filterRisk]);
+  }, [tickets, searchTerm, filterStatus, filterRisk, chartTimeRange]); // 👈 ADD chartTimeRange dependency
 
   // Filtered users
   const filteredUsers = useMemo(() => {
@@ -332,29 +370,33 @@ export default function AdminDashboard({ user }) {
 
 
   const statusChartData = useMemo(() => {
-  const open = filteredTicketsForCharts.filter(t => t.status === 'open').length;
-  const inProgress = filteredTicketsForCharts.filter(t => t.status === 'in-progress').length;
-  const resolved = filteredTicketsForCharts.filter(t => t.status === 'resolved').length;
-  return [
-    { name: 'Open', value: open, color: '#ef4444' },
-    { name: 'In Progress', value: inProgress, color: '#eab308' },
-    { name: 'Resolved', value: resolved, color: '#22c55e' },
-  ];
-  // No .filter() – all three categories always appear
-}, [filteredTicketsForCharts]);
+    const open = filteredTicketsForCharts.filter(t => t.status === 'open').length;
+    const inProgress = filteredTicketsForCharts.filter(t => t.status === 'in-progress').length;
+    const resolved = filteredTicketsForCharts.filter(t => t.status === 'resolved').length;
+
+    // Only include categories that have values
+    const result = [];
+    if (open > 0) result.push({ name: 'Open', value: open, color: '#ef4444' });
+    if (inProgress > 0) result.push({ name: 'In Progress', value: inProgress, color: '#eab308' });
+    if (resolved > 0) result.push({ name: 'Resolved', value: resolved, color: '#22c55e' });
+
+    return result;
+  }, [filteredTicketsForCharts]);
 
   const riskChartData = useMemo(() => {
-    // Exclude resolved tickets
-    const unresolved = tickets.filter(t => t.status !== 'resolved');
+    // Exclude resolved tickets from filtered data
+    const unresolved = filteredTicketsForCharts.filter(t => t.status !== 'resolved');
     const low = unresolved.filter(t => t.risk_label === 'LOW').length;
     const medium = unresolved.filter(t => t.risk_label === 'MEDIUM').length;
     const high = unresolved.filter(t => t.risk_label === 'HIGH').length;
-    return [
-      { name: 'Low Risk', value: low, color: '#3b82f6' },
-      { name: 'Medium Risk', value: medium, color: '#f97316' },
-      { name: 'High Risk', value: high, color: '#ef4444' },
-    ].filter(item => item.value > 0);
-  }, [tickets]);   // runs whenever tickets change
+
+    const result = [];
+    if (low > 0) result.push({ name: 'Low Risk', value: low, color: '#3b82f6' });
+    if (medium > 0) result.push({ name: 'Medium Risk', value: medium, color: '#f97316' });
+    if (high > 0) result.push({ name: 'High Risk', value: high, color: '#ef4444' });
+
+    return result;
+  }, [filteredTicketsForCharts]);
 
   // Template CRUD
   const handleSaveTemplate = async (e) => {
@@ -409,16 +451,27 @@ export default function AdminDashboard({ user }) {
       status: formData.get("status"),
       assigned_to_email: formData.get("assigned_to_email") || null,
       remarks_by_admin: formData.get("remarks_by_admin"),
+      system_name: formData.get("system_name"),
+      department: formData.get("department"),
+      branch: formData.get("branch"),
+      affected_user: formData.get("affected_user"),
+      risk_label: formData.get("risk_label"),
+      problem_details: formData.get("problem_details"),
+      root_cause: formData.get("root_cause"),
+      resolution: formData.get("resolution"),
     };
-    if (formData.get("root_cause")) updates.root_cause = formData.get("root_cause");
-    if (formData.get("resolution")) updates.resolution = formData.get("resolution");
-    if (formData.get("risk_label")) updates.risk_label = formData.get("risk_label");
+
+    const downTime = formData.get("down_time");
+    const upTime = formData.get("up_time");
+    if (downTime) updates.down_time = new Date(downTime).toISOString();
+    if (upTime) updates.up_time = new Date(upTime).toISOString();
 
     try {
       await updateTicket(editingItem.id, updates, token);
       notify("Ticket updated successfully");
       setShowModal(false);
       setEditingItem(null);
+      setModalType("");
       loadData();
     } catch (err) {
       notify(err.message, "error");
@@ -443,6 +496,19 @@ export default function AdminDashboard({ user }) {
       LOW: "bg-green-100 text-green-800 border-green-300"
     };
     return colors[risk] || colors.LOW;
+  };
+
+
+  const statusConfig = {
+    open: { color: "bg-red-100 text-red-700 border-red-200", icon: AlertCircle, label: "Open" },
+    "in-progress": { color: "bg-yellow-100 text-yellow-700 border-yellow-200", icon: Activity, label: "In Progress" },
+    resolved: { color: "bg-green-100 text-green-700 border-green-200", icon: CheckCircle, label: "Resolved" }
+  };
+
+  const riskConfig = {
+    low: { color: "bg-blue-100 text-blue-700", label: "Low" },
+    medium: { color: "bg-orange-100 text-orange-700", label: "Medium" },
+    high: { color: "bg-red-100 text-red-700", label: "High" }
   };
 
   const getStatusBadge = (status) => {
@@ -691,52 +757,135 @@ export default function AdminDashboard({ user }) {
     switch (activeTab) {
       case "tickets":
         return (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">ID</th>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Reported By</th>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">System</th>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Problem</th>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Risk</th>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {filteredTickets.map((ticket) => (
-                  <tr key={ticket.id} className="hover:bg-gray-50 transition">
-                    <td className="px-6 py-4 text-sm font-semibold text-gray-900">#{ticket.ticket_sl}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{new Date(ticket.date).toLocaleDateString()}</td>
-                    <td className="px-6 py-4 text-sm font-medium text-gray-900">{ticket.reportedByName}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{ticket.system_name}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600 max-w-[200px] truncate">{ticket.problem_details}</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-1 rounded-full text-xs font-bold ${getRiskBadge(ticket.risk_label)}`}>
-                        {ticket.risk_label}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-1 rounded-full text-xs font-bold ${getStatusBadge(ticket.status)}`}>
-                        {ticket.status.toUpperCase()}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex gap-2">
-                        <button onClick={() => openModal("ticket", ticket)} className="p-1 text-blue-600 hover:bg-blue-50 rounded transition" title="Edit Ticket">
-                          <Edit size={18} />
-                        </button>
-                        <button onClick={() => { setDeleteConfirm(ticket.id); setDeleteType("ticket"); }} className="p-1 text-red-600 hover:bg-red-50 rounded transition" title="Delete Ticket">
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                    </td>
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">#</th>
+                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Date</th>
+                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Reported By</th>
+                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Assigned To</th>
+                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">System</th>
+                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Problem</th>
+                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Down Time</th>
+                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Up Time</th>
+                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Risk</th>
+                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Status</th>
+                    <th className="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {filteredTickets.map((ticket) => {
+                    const risk = riskConfig[ticket.risk_label?.toLowerCase()] || { color: "bg-blue-100 text-blue-700", label: ticket.risk_label || "Low" };
+                    const status = statusConfig[ticket.status] || statusConfig.open;
+                    const StatusIcon = status.icon;
+
+                    // Helper for relative downtime
+                    const getRelativeTime = (downTimeString) => {
+                      if (!downTimeString) return { text: 'Not set', bgColor: 'bg-gray-100', textColor: 'text-gray-600' };
+                      const downTime = new Date(downTimeString);
+                      const now = new Date();
+                      const diffMins = Math.floor((now - downTime) / 60000);
+                      let text = '';
+                      let bgColor = '';
+                      let textColor = '';
+                      if (diffMins < 1) text = 'Just now';
+                      else if (diffMins < 60) text = `${diffMins} min${diffMins > 1 ? 's' : ''} ago`;
+                      else if (diffMins < 1440) text = `${Math.floor(diffMins / 60)} hour${Math.floor(diffMins / 60) > 1 ? 's' : ''} ago`;
+                      else text = `${Math.floor(diffMins / 1440)} day${Math.floor(diffMins / 1440) > 1 ? 's' : ''} ago`;
+                      if (diffMins <= 5) { bgColor = 'bg-green-100'; textColor = 'text-green-700'; }
+                      else if (diffMins <= 30) { bgColor = 'bg-orange-100'; textColor = 'text-orange-700'; }
+                      else { bgColor = 'bg-red-100'; textColor = 'text-red-700'; }
+                      return { text, bgColor, textColor };
+                    };
+
+                    const downTimeDisplay = ticket.down_time ? getRelativeTime(ticket.down_time) : null;
+
+                    return (
+                      <tr key={ticket.id} className="border-b border-gray-100 hover:bg-gray-50 transition">
+                        <td className="px-6 py-4 text-sm text-gray-500">{ticket.ticket_sl}</td>
+                        <td className="px-6 py-4 text-sm text-gray-600 whitespace-nowrap">{new Date(ticket.date).toLocaleDateString()}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-1.5">
+                            <div className="h-6 w-6 bg-blue-100 rounded-full flex items-center justify-center">
+                              <User size={12} className="text-blue-600" />
+                            </div>
+                            <span className="font-medium text-gray-700">{ticket.reportedByName}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-600">
+                          {users.find(u => u.email === ticket.assigned_to_email)?.name || ticket.assigned_to_name || "Unassigned"}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-1.5">
+                            <Server size={12} className="text-gray-400" />
+                            <span className="text-gray-700">{ticket.system_name}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-600 max-w-[200px] truncate" title={ticket.problem_details}>
+                          {ticket.problem_details}
+                        </td>
+                        <td className="px-6 py-4 text-xs whitespace-nowrap">
+                          {ticket.down_time ? (
+                            <div className={`flex items-center gap-1 px-2 py-1 rounded-full ${downTimeDisplay.bgColor} ${downTimeDisplay.textColor} w-fit`}>
+                              <Clock size={12} />
+                              <span className="font-medium">{downTimeDisplay.text}</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-gray-100 text-gray-500 w-fit">
+                              <Clock size={12} />
+                              <span>Not set</span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-500">
+                          {ticket.up_time ? new Date(ticket.up_time).toLocaleString() : "-"}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${risk.color}`}>
+                            {risk.label}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-1.5">
+                            <StatusIcon size={12} className={status.color.split(' ')[1]} />
+                            <span className={`text-xs font-medium ${status.color.split(' ')[1]}`}>
+                              {status.label}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => openModal("viewTicket", ticket)}
+                              className="p-1 text-blue-600 hover:bg-blue-50 rounded transition"
+                              title="View Details"
+                            >
+                              <Eye size={18} />
+                            </button>
+                            <button
+                              onClick={() => openModal("editTicket", ticket)}
+                              className="p-1 text-green-600 hover:bg-green-50 rounded transition"
+                              title="Edit Ticket"
+                            >
+                              <Edit size={18} />
+                            </button>
+                            <button
+                              onClick={() => { setDeleteConfirm(ticket.id); setDeleteType("ticket"); }}
+                              className="p-1 text-red-600 hover:bg-red-50 rounded transition"
+                              title="Delete Ticket"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         );
 
@@ -961,7 +1110,7 @@ export default function AdminDashboard({ user }) {
         ))}
       </div>
 
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-8xl mx-auto">
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">Admin Dashboard</h1>
@@ -1000,38 +1149,53 @@ export default function AdminDashboard({ user }) {
         <div className="flex flex-wrap gap-2 mb-4">
           <button
             onClick={() => setChartTimeRange('daily')}
-            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'daily' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
+            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'daily' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            title="Last 24 hours"
           >
             Today
           </button>
           <button
+            onClick={() => setChartTimeRange('yesterday')}
+            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'yesterday' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            title="Yesterday only"
+          >
+            Yesterday
+          </button>
+          <button
             onClick={() => setChartTimeRange('weekly')}
-            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'weekly' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
+            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'weekly' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            title="Last 7 days"
           >
             This Week
           </button>
           <button
             onClick={() => setChartTimeRange('monthly')}
-            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'monthly' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
+            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'monthly' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            title="Last 30 days"
           >
             This Month
           </button>
           <button
             onClick={() => setChartTimeRange('quarterly')}
-            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'quarterly' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
+            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'quarterly' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            title="Last 90 days"
           >
             This Quarter
           </button>
           <button
             onClick={() => setChartTimeRange('yearly')}
-            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'yearly' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
+            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'yearly' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            title="Last 365 days"
           >
             This Year
+          </button>
+
+          <button
+            onClick={() => setChartTimeRange('previousYear')}
+            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${chartTimeRange === 'previousYear' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            title="Previous year"
+          >
+            Previous Year
           </button>
         </div>
         {/* Pie Charts */}
@@ -1137,6 +1301,15 @@ export default function AdminDashboard({ user }) {
             <Plus size={18} />
             Add New {activeTab.slice(0, -1)}
           </button>
+          {searchTerm && (
+            <button
+              onClick={() => setSearchTerm("")}
+              className="ml-2 p-2 text-gray-400 hover:text-gray-600"
+              title="Clear search"
+            >
+              <X size={18} />
+            </button>
+          )}
         </div>
 
         {/* Additional filters for tickets */}
@@ -1191,6 +1364,93 @@ export default function AdminDashboard({ user }) {
               </button>
             </div>
             {renderModalContent()}
+          </div>
+        </div>
+      )}
+
+      {/* View Ticket Modal */}
+      {modalType === "viewTicket" && editingItem && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl">
+            <div className="flex justify-between items-center p-4 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-indigo-50">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center">
+                  <FileText size={20} className="text-blue-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-800">Ticket Details</h2>
+                  <p className="text-xs text-gray-500">ID: #{editingItem.ticket_sl}</p>
+                </div>
+              </div>
+              <button onClick={() => { setShowModal(false); setEditingItem(null); setModalType(""); }} className="p-1 hover:bg-gray-100 rounded transition">
+                <X size={18} className="text-gray-500" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Ticket SL</p><p className="font-medium text-gray-800">{editingItem.ticket_sl || "-"}</p></div>
+                <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Month</p><p className="font-medium text-gray-800">{editingItem.month || "-"}</p></div>
+                <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">System Name</p><p className="font-medium text-gray-800">{editingItem.system_name || "-"}</p></div>
+                <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Department</p><p className="font-medium text-gray-800">{editingItem.department || "-"}</p></div>
+                <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Branch</p><p className="font-medium text-gray-800">{editingItem.branch || "-"}</p></div>
+                <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Affected User</p><p className="font-medium text-gray-800">{editingItem.affected_user || "-"}</p></div>
+                <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">PC Name</p><p className="font-medium text-gray-800">{editingItem.pc_name || "-"}</p></div>
+                <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Risk Level</p><span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${riskConfig[editingItem.risk_label?.toLowerCase()]?.color || "bg-gray-100"}`}>{editingItem.risk_label || "N/A"}</span></div>
+                <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Status</p><span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${statusConfig[editingItem.status]?.color || "bg-gray-100"}`}>{statusConfig[editingItem.status]?.label || editingItem.status}</span></div>
+                <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Reported By</p><p className="font-medium text-gray-800">{editingItem.reportedByName || "-"}</p></div>
+                <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Reported By Email</p><p className="font-medium text-gray-800">{editingItem.reported_by_email || "-"}</p></div>
+                <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Assigned To</p><p className="font-medium text-gray-800">{users.find(u => u.email === editingItem.assigned_to_email)?.name || editingItem.assigned_to_name || "Unassigned"}</p></div>
+                <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Report Date</p><p className="font-medium text-gray-800">{editingItem.date ? new Date(editingItem.date).toLocaleDateString() : "-"}</p></div>
+                <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Created At</p><p className="font-medium text-gray-800">{editingItem.created_at ? new Date(editingItem.created_at).toLocaleString() : "-"}</p></div>
+                <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Updated At</p><p className="font-medium text-gray-800">{editingItem.updated_at ? new Date(editingItem.updated_at).toLocaleString() : "-"}</p></div>
+                <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Down Time</p><p className="font-medium text-gray-800">{editingItem.down_time ? new Date(editingItem.down_time).toLocaleString() : "-"}</p></div>
+                <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Up Time</p><p className="font-medium text-gray-800">{editingItem.up_time ? new Date(editingItem.up_time).toLocaleString() : "-"}</p></div>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-4 mb-4"><p className="text-xs text-gray-500 mb-2">Problem Details</p><p className="text-gray-800 whitespace-pre-wrap">{editingItem.problem_details || "-"}</p></div>
+              {editingItem.root_cause && <div className="bg-gray-50 rounded-lg p-4 mb-4"><p className="text-xs text-gray-500 mb-2">Root Cause</p><p className="text-gray-800 whitespace-pre-wrap">{editingItem.root_cause}</p></div>}
+              {editingItem.resolution && <div className="bg-gray-50 rounded-lg p-4 mb-4"><p className="text-xs text-gray-500 mb-2">Resolution</p><p className="text-gray-800 whitespace-pre-wrap">{editingItem.resolution}</p></div>}
+              {editingItem.remarks && <div className="bg-gray-50 rounded-lg p-4"><p className="text-xs text-gray-500 mb-2">Remarks</p><p className="text-gray-800 whitespace-pre-wrap">{editingItem.remarks}</p></div>}
+            </div>
+            <div className="flex justify-end p-4 border-t border-gray-100 bg-gray-50">
+              <button onClick={() => { setShowModal(false); setEditingItem(null); setModalType(""); }} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+
+      {/* Edit Ticket Modal */}
+      {modalType === "editTicket" && editingItem && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl">
+            <div className="flex justify-between items-center p-4 border-b border-gray-100">
+              <h2 className="text-lg font-semibold text-gray-800">Edit Ticket #{editingItem.ticket_sl}</h2>
+              <button onClick={() => { setShowModal(false); setEditingItem(null); setModalType(""); }} className="p-1 hover:bg-gray-100 rounded transition">
+                <X size={18} className="text-gray-500" />
+              </button>
+            </div>
+            <form onSubmit={handleUpdateTicket} className="p-4 overflow-y-auto max-h-[calc(90vh-120px)] space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">System Name</label><input type="text" name="system_name" defaultValue={editingItem.system_name} className="w-full border rounded-lg px-3 py-2" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Department</label><input type="text" name="department" defaultValue={editingItem.department} className="w-full border rounded-lg px-3 py-2" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Branch</label><input type="text" name="branch" defaultValue={editingItem.branch} className="w-full border rounded-lg px-3 py-2" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Affected User</label><input type="text" name="affected_user" defaultValue={editingItem.affected_user} className="w-full border rounded-lg px-3 py-2" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Risk Level</label><select name="risk_label" defaultValue={editingItem.risk_label} className="w-full border rounded-lg px-3 py-2"><option value="LOW">Low</option><option value="MEDIUM">Medium</option><option value="HIGH">High</option></select></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Status</label><select name="status" defaultValue={editingItem.status} className="w-full border rounded-lg px-3 py-2"><option value="open">Open</option><option value="in-progress">In Progress</option><option value="resolved">Resolved</option></select></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Assign To (Email)</label><input type="email" name="assigned_to_email" defaultValue={editingItem.assigned_to_email || ""} className="w-full border rounded-lg px-3 py-2" placeholder="Leave empty for unassigned" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Down Time</label><input type="datetime-local" name="down_time" defaultValue={editingItem.down_time ? new Date(editingItem.down_time).toISOString().slice(0, 16) : ""} className="w-full border rounded-lg px-3 py-2" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Up Time</label><input type="datetime-local" name="up_time" defaultValue={editingItem.up_time ? new Date(editingItem.up_time).toISOString().slice(0, 16) : ""} className="w-full border rounded-lg px-3 py-2" /></div>
+              </div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Problem Details</label><textarea name="problem_details" rows="3" defaultValue={editingItem.problem_details} className="w-full border rounded-lg px-3 py-2" /></div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Root Cause</label><textarea name="root_cause" rows="2" defaultValue={editingItem.root_cause || ""} className="w-full border rounded-lg px-3 py-2" /></div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Resolution</label><textarea name="resolution" rows="2" defaultValue={editingItem.resolution || ""} className="w-full border rounded-lg px-3 py-2" /></div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Supervisor Remarks</label><textarea name="remarks_by_admin" rows="2" defaultValue={editingItem.remarks_by_admin || ""} className="w-full border rounded-lg px-3 py-2" /></div>
+              <div className="flex gap-3 pt-4">
+                <button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition">Update Ticket</button>
+                <button type="button" onClick={() => { setShowModal(false); setEditingItem(null); setModalType(""); }} className="flex-1 border border-gray-300 py-2 rounded-lg hover:bg-gray-50 transition">Cancel</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
