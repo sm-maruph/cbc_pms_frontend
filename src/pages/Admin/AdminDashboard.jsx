@@ -56,7 +56,7 @@ export default function AdminDashboard({ user }) {
   const [editingItem, setEditingItem] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [deleteType, setDeleteType] = useState(null);
-  const [chartTimeRange, setChartTimeRange] = useState('daily'); // daily, weekly, monthly, quarterly, yearly
+  // const [chartTimeRange, setChartTimeRange] = useState('daily'); // daily, weekly, monthly, quarterly, yearly
   const [selectedCardFilter, setSelectedCardFilter] = useState(null);
   // Add these with your other state declarations
   const [dateFilter, setDateFilter] = useState("all");
@@ -164,9 +164,47 @@ export default function AdminDashboard({ user }) {
   };
 
 
+  // Replace filteredTicketsForCharts with a new useMemo that uses dateFilter
   const filteredTicketsForCharts = useMemo(() => {
-    return filterTicketsByDateRange(tickets, chartTimeRange);
-  }, [tickets, chartTimeRange]);
+    let filtered = [...tickets];
+
+    if (dateFilter !== "all") {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const startOfWeek = new Date(today);
+      const day = today.getDay();
+      const diffToMonday = day === 0 ? 6 : day - 1;
+      startOfWeek.setDate(today.getDate() - diffToMonday);
+      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      const startOfQuarter = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
+      const startOfYear = new Date(today.getFullYear(), 0, 1);
+
+      filtered = filtered.filter(ticket => {
+        if (!ticket.date) return false;
+        const dateParts = ticket.date.split('-');
+        const ticketDate = new Date(
+          parseInt(dateParts[0]),
+          parseInt(dateParts[1]) - 1,
+          parseInt(dateParts[2])
+        );
+        ticketDate.setHours(0, 0, 0, 0);
+
+        switch (dateFilter) {
+          case "today": return ticketDate.getTime() === today.getTime();
+          case "yesterday": return ticketDate.getTime() === yesterday.getTime();
+          case "week": return ticketDate >= startOfWeek && ticketDate <= today;
+          case "month": return ticketDate >= startOfMonth && ticketDate <= today;
+          case "quarter": return ticketDate >= startOfQuarter && ticketDate <= today;
+          case "year": return ticketDate >= startOfYear && ticketDate <= today;
+          default: return true;
+        }
+      });
+    }
+
+    return filtered;
+  }, [tickets, dateFilter]);
 
   // Filtered tickets
   // Filtered tickets (for table)
@@ -1282,14 +1320,13 @@ export default function AdminDashboard({ user }) {
           </div>
         </div>
 
-        {/* Time Range Filter for Charts */}
-        {/* Date Filter Buttons - Same as UserDashboard */}
-        <div className="flex flex-wrap gap-2 mb-4">
+        {/* Date Filter for Pie Charts */}
+        <div className="flex flex-wrap gap-2 mb-6">
           <button
             onClick={() => setDateFilter("all")}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${dateFilter === "all"
-              ? "bg-blue-600 text-white shadow-md"
-              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                ? "bg-blue-600 text-white shadow-md"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
               }`}
           >
             All
@@ -1297,8 +1334,8 @@ export default function AdminDashboard({ user }) {
           <button
             onClick={() => setDateFilter("today")}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${dateFilter === "today"
-              ? "bg-blue-600 text-white shadow-md"
-              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                ? "bg-blue-600 text-white shadow-md"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
               }`}
           >
             Today
@@ -1306,8 +1343,8 @@ export default function AdminDashboard({ user }) {
           <button
             onClick={() => setDateFilter("yesterday")}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${dateFilter === "yesterday"
-              ? "bg-blue-600 text-white shadow-md"
-              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                ? "bg-blue-600 text-white shadow-md"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
               }`}
           >
             Yesterday
@@ -1315,8 +1352,8 @@ export default function AdminDashboard({ user }) {
           <button
             onClick={() => setDateFilter("week")}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${dateFilter === "week"
-              ? "bg-blue-600 text-white shadow-md"
-              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                ? "bg-blue-600 text-white shadow-md"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
               }`}
           >
             This Week
@@ -1324,8 +1361,8 @@ export default function AdminDashboard({ user }) {
           <button
             onClick={() => setDateFilter("month")}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${dateFilter === "month"
-              ? "bg-blue-600 text-white shadow-md"
-              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                ? "bg-blue-600 text-white shadow-md"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
               }`}
           >
             This Month
@@ -1333,8 +1370,8 @@ export default function AdminDashboard({ user }) {
           <button
             onClick={() => setDateFilter("quarter")}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${dateFilter === "quarter"
-              ? "bg-blue-600 text-white shadow-md"
-              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                ? "bg-blue-600 text-white shadow-md"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
               }`}
           >
             This Quarter
@@ -1342,8 +1379,8 @@ export default function AdminDashboard({ user }) {
           <button
             onClick={() => setDateFilter("year")}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${dateFilter === "year"
-              ? "bg-blue-600 text-white shadow-md"
-              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                ? "bg-blue-600 text-white shadow-md"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
               }`}
           >
             This Year
