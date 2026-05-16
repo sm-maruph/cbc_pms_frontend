@@ -16,21 +16,6 @@ import {
 // Import API functions
 import { getTickets, updateTicket, getAssignableUsers, getTicketBySL } from "../../services/api";
 
-/* USERS (for assignee names – kept as is) */
-// const defaultUsers = [
-//   { email: "jahidul@cbc.com", name: "Jahidul Balat" },
-//   { email: "sifat@cbc.com", name: "Sifat Nur Billah" },
-//   { email: "supriya@cbc.com", name: "Supriya Das Gupta" },
-//   { email: "tanim@cbc.com", name: "Tanim Mahmud" },
-//   { email: "cito@cbc.com", name: "CITO" },
-//   { email: "eazuddin@cbc.com", name: "Eaz Uddin" },
-//   { email: "tudu@cbc.com", name: "Tudu" },
-//   { email: "abubakar@cbc.com", name: "Abu Bakar Siddiq" },
-//   { email: "shah@cbc.com", name: "Shah Mohammad Al Noor" },
-//   { email: "salman@cbc.com", name: "Salman Ahmed" },
-//   { email: "sm.maruph@cbc.com", name: "S. M. Maruph" },
-//   { email: "raiyan@cbc.com", name: "Raiyan" },
-// ];
 
 const statusConfig = {
   open: { color: "bg-red-100 text-red-700 border-red-200", icon: AlertCircle, label: "Open" },
