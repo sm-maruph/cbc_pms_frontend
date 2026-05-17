@@ -81,6 +81,12 @@ export default function UserDashboard({ user }) {
   const token = localStorage.getItem("cbcToken");
   const currentUserEmail = user?.email || localStorage.getItem("userEmail");
 
+  // ✅ ADD THIS DEBUGGING CODE
+  console.log("=== USER DEBUG INFO ===");
+  console.log("Current User Object:", user);
+  console.log("Current User Email:", currentUserEmail);
+  console.log("Token exists:", !!token);
+
 
 
   // Helper: Get user name from email
@@ -377,9 +383,35 @@ export default function UserDashboard({ user }) {
     }));
   };
 
-  // Check if user can edit ticket
   const canEditTicket = (ticket) => {
-    return ticket.reported_by_email === currentUserEmail || ticket.assignedToEmail === currentUserEmail;
+    // Get emails safely
+    const reporterEmail = ticket.reported_by_email || ticket.reportedByEmail;
+    const assigneeEmail = ticket.assignedToEmail;
+
+    // Debug logging for each ticket
+    console.log(`🔍 Checking ticket ${ticket.id}:`);
+    console.log(`   - Reporter email: ${reporterEmail}`);
+    console.log(`   - Assignee email: ${assigneeEmail}`);
+    console.log(`   - Current user: ${currentUserEmail}`);
+
+    // If no current user email, deny edit
+    if (!currentUserEmail) {
+      console.warn("⚠️ No current user email found!");
+      return false;
+    }
+
+    // Check if current user is reporter (case-insensitive)
+    const isReporter = reporterEmail &&
+      reporterEmail.toLowerCase() === currentUserEmail.toLowerCase();
+
+    // Check if current user is assignee (case-insensitive)
+    const isAssignee = assigneeEmail &&
+      assigneeEmail.toLowerCase() === currentUserEmail.toLowerCase();
+
+    const canEdit = isReporter || isAssignee;
+    console.log(`   - Can edit: ${canEdit} (Reporter: ${isReporter}, Assignee: ${isAssignee})`);
+
+    return canEdit;
   };
 
   // Check if user can change ticket status
@@ -461,7 +493,6 @@ export default function UserDashboard({ user }) {
     });
   };
 
-  // Stats derived from tickets (respects date filter)
   // Stats derived from tickets (respects date filter)
   const stats = useMemo(() => {
     // First filter by date
