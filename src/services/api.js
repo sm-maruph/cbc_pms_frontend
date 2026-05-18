@@ -33,7 +33,29 @@ export const deleteTicket = (id, token) => request(`/tickets/${id}`, 'DELETE', n
 export const getTicketBySL = (ticket_sl, token) => request(`/tickets/sl/${ticket_sl}`, 'GET', null, token);
 
 // Dashboard stats
-export const getDashboardStats = (token) => request('/stats', 'GET', null, token);
+// Dashboard stats - Updated to match backend route
+export const getDashboardStats = async (token, dateFilter = 'all') => {
+    const response = await fetch(`${API_BASE}/tickets/stats?dateFilter=${dateFilter}`, {
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        }
+    });
+    if (!response.ok) throw new Error('Failed to fetch dashboard stats');
+    return response.json();
+};
+
+export const getPaginatedTickets = async (token, params = {}) => {
+    const queryParams = new URLSearchParams(params).toString();
+    const response = await fetch(`${API_BASE}/tickets/paginated?${queryParams}`, {
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        }
+    });
+    if (!response.ok) throw new Error('Failed to fetch paginated tickets');
+    return response.json();
+};
 
 // Reports
 export const getReportData = (range, startDate, endDate, token) => {

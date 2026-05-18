@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 
 import {
@@ -10,11 +10,20 @@ import {
   CheckCircle, Edit, Trash2, Plus, X,
   Activity, TrendingUp, FileText, Zap, AlertTriangle,
   Eye, Calendar, ChevronLeft, ChevronRight,
-  Printer, Download, Mail, ExternalLink
+  Printer, Download, Mail, ExternalLink, RefreshCw
 } from "lucide-react";
 
 // Import API functions
-import { getTickets, updateTicket, getAssignableUsers, getTicketBySL } from "../../services/api";
+import {
+  updateTicket,
+  getAssignableUsers,
+  getTicketBySL,
+  getDashboardStats,
+  getPaginatedTickets
+} from "../../services/api";
+
+// Add this new import for Socket.IO
+import socketService from "../../services/socket";
 
 
 const statusConfig = {
@@ -39,27 +48,27 @@ const COLORS = {
 };
 
 // Date filter functions
-const getDateFilters = () => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+// const getDateFilters = () => {
+//   const today = new Date();
+//   today.setHours(0, 0, 0, 0);
 
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
+//   const yesterday = new Date(today);
+//   yesterday.setDate(yesterday.getDate() - 1);
 
-  const startOfWeek = new Date(today);
-  const day = today.getDay();
-  const diff = day === 0 ? 6 : day - 1;
-  startOfWeek.setDate(today.getDate() - diff);
-  startOfWeek.setHours(0, 0, 0, 0);
+//   const startOfWeek = new Date(today);
+//   const day = today.getDay();
+//   const diff = day === 0 ? 6 : day - 1;
+//   startOfWeek.setDate(today.getDate() - diff);
+//   startOfWeek.setHours(0, 0, 0, 0);
 
-  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+//   const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
-  const startOfQuarter = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
+//   const startOfQuarter = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
 
-  const startOfYear = new Date(today.getFullYear(), 0, 1);
+//   const startOfYear = new Date(today.getFullYear(), 0, 1);
 
-  return { today, yesterday, startOfWeek, startOfMonth, startOfQuarter, startOfYear };
-};
+//   return { today, yesterday, startOfWeek, startOfMonth, startOfQuarter, startOfYear };
+// };
 
 export default function UserDashboard({ user }) {
   const [tickets, setTickets] = useState([]);
@@ -67,7 +76,7 @@ export default function UserDashboard({ user }) {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [sortBy, setSortBy] = useState("date");
-  const [dateFilter, setDateFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("today");
   const [selectedCardFilter, setSelectedCardFilter] = useState(null); // For card click filtering
 
   const [selectedTicket, setSelectedTicket] = useState(null);
@@ -77,7 +86,21 @@ export default function UserDashboard({ user }) {
   const [resolutionData, setResolutionData] = useState({ rootCause: "", upTime: "" });
 
   const [notifications, setNotifications] = useState([]);
-
+  // ✅ ADD THESE NEW STATE VARIABLES AFTER THE EXISTING ONES
+  // ✅ ADD THESE MISSING STATE VARIABLES
+  const [dashboardStats, setDashboardStats] = useState({
+    total: 0, open: 0, progress: 0, resolved: 0,
+    activeTotal: 0, highRisk: 0, mediumRisk: 0, lowRisk: 0
+  });
+  const [statusChartData, setStatusChartData] = useState([]);
+  const [riskChartData, setRiskChartData] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [pageSize] = useState(50);
+  const [isLoading, setIsLoading] = useState(false);
+  const [realtimeUpdate, setRealtimeUpdate] = useState(null);
+  const [autoRefresh, setAutoRefresh] = useState(true);
   const token = localStorage.getItem("cbcToken");
   const currentUserEmail = user?.email || localStorage.getItem("userEmail");
 
@@ -128,26 +151,41 @@ export default function UserDashboard({ user }) {
   });
 
   // Fetch tickets from API
-  const fetchTickets = async () => {
-    if (!token) {
-      notify("Not authenticated", "error");
-      return;
-    }
+  const fetchPaginatedTickets = async () => {
+    if (!token) return;
+    setIsLoading(true);
     try {
-      const data = await getTickets(token);
-      setTickets(data.map(formatTicket));
-      // Clean up any emails in assigned_to_name (backward compatibility)
-      // setTimeout(() => {
-      //   setTickets(prev => prev.map(ticket => {
-      //     if (ticket.assignedToName && ticket.assignedToName.includes('@')) {
-      //       return { ...ticket, assignedToName: getUserName(ticket.assignedToName) };
-      //     }
-      //     return ticket;
-      //   }));
-      // }, 100);
+      const params = {
+        page: currentPage,
+        pageSize: pageSize,
+        status: filterStatus !== 'all' ? filterStatus : '',
+        search: search,
+        dateFilter: dateFilter,
+        sortBy: sortBy
+      };
+
+      const data = await getPaginatedTickets(token, params);
+      setTickets(data.tickets.map(formatTicket));
+      setTotalPages(data.pagination.totalPages);
+      setTotalCount(data.pagination.totalCount);
     } catch (err) {
+      console.error("Failed to load tickets:", err);
       notify("Failed to load tickets", "error");
-      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fetch dashboard stats from backend
+  const fetchDashboardStats = async () => {
+    if (!token) return;
+    try {
+      const data = await getDashboardStats(token, dateFilter);
+      setDashboardStats(data.stats);
+      setStatusChartData(data.statusChartData);
+      setRiskChartData(data.riskChartData);
+    } catch (err) {
+      console.error("Failed to fetch stats:", err);
     }
   };
 
@@ -162,11 +200,103 @@ export default function UserDashboard({ user }) {
     }
   };
 
+  // Initial data load
   useEffect(() => {
-    fetchTickets();
+    fetchDashboardStats();
+    fetchPaginatedTickets();
     fetchUsers();
   }, [token]);
 
+  // Refetch when filters change (reset to page 1)
+  useEffect(() => {
+    if (currentPage === 1) {
+      fetchPaginatedTickets();
+    } else {
+      setCurrentPage(1);
+    }
+  }, [filterStatus, search, dateFilter, sortBy]);
+
+  // Refetch when page changes
+  useEffect(() => {
+    fetchPaginatedTickets();
+  }, [currentPage]);
+
+  // Refetch stats when date filter changes
+  useEffect(() => {
+    fetchDashboardStats();
+  }, [dateFilter]);
+
+
+  // Socket.IO for real-time updates
+  useEffect(() => {
+    if (user?.email && token) {
+      socketService.connect(user.email);
+
+      // Listen for new tickets
+      socketService.on('ticket-created', (data) => {
+        console.log('🔔 New ticket created:', data);
+        setRealtimeUpdate({
+          message: data.message,
+          type: 'new_ticket'
+        });
+        fetchDashboardStats();
+        if (currentPage === 1) {
+          fetchPaginatedTickets();
+        } else {
+          setCurrentPage(1);
+        }
+        notify(data.message, 'info');
+      });
+
+      // Listen for ticket updates
+      socketService.on('ticket-updated', (data) => {
+        console.log('✏️ Ticket updated:', data);
+        setRealtimeUpdate({
+          message: `Ticket ${data.ticket?.ticket_sl || ''} was updated`,
+          type: 'update'
+        });
+        fetchPaginatedTickets();
+        fetchDashboardStats();
+      });
+
+      // Listen for stats updates
+      socketService.on('stats-updated', (data) => {
+        console.log('📊 Stats updated:', data);
+        fetchDashboardStats();
+      });
+
+      // Listen for status changes
+      socketService.on('ticket-status-changed', (data) => {
+        console.log('🔄 Status changed:', data);
+        notify(`Ticket ${data.ticketSl} status changed to ${data.newStatus}`, 'info');
+        fetchPaginatedTickets();
+        fetchDashboardStats();
+      });
+    }
+
+    return () => {
+      socketService.off('ticket-created');
+      socketService.off('ticket-updated');
+      socketService.off('stats-updated');
+      socketService.off('ticket-status-changed');
+    };
+  }, [user?.email, token, currentPage]);
+
+
+  // Auto-refresh every 30 seconds
+  useEffect(() => {
+    if (!autoRefresh) return;
+
+    const interval = setInterval(() => {
+      console.log('🔄 Auto-refreshing dashboard...');
+      fetchDashboardStats();
+      if (currentPage === 1) {
+        fetchPaginatedTickets();
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [autoRefresh, currentPage]);
 
   // Helper: Format downtime as relative time with color
   const getRelativeTime = (downTimeString, status) => {
@@ -282,7 +412,8 @@ export default function UserDashboard({ user }) {
       await updateTicket(ticketId, { assigned_to_email: userEmail, status: "in-progress" }, token);
       const userName = users.find(u => u.email === userEmail)?.name || userEmail;
       notify(`Assigned to ${userName} and status changed to In Progress`);
-      fetchTickets();
+      fetchPaginatedTickets(); // ✅ Fixed
+      fetchDashboardStats();;
     } catch (err) {
       notify("Assignment failed", "error");
     }
@@ -307,7 +438,8 @@ export default function UserDashboard({ user }) {
       notify("Ticket updated successfully");
       setSelectedTicket(null);
       setEditTicket(null);
-      fetchTickets();
+      fetchPaginatedTickets(); // ✅ Fixed
+      fetchDashboardStats();;
     } catch (err) {
       notify("Update failed", "error");
     }
@@ -318,7 +450,8 @@ export default function UserDashboard({ user }) {
     try {
       await updateTicket(id, { status: newStatus }, token);
       notify("Status updated");
-      fetchTickets();
+      fetchPaginatedTickets(); // ✅ Fixed
+      fetchDashboardStats();;
     } catch (err) {
       notify("Status update failed", "error");
     }
@@ -367,7 +500,8 @@ export default function UserDashboard({ user }) {
       notify("Ticket resolved successfully");
       setResolutionPopup(null);
       setResolutionData({ rootCause: "", upTime: "" });
-      fetchTickets();
+      fetchPaginatedTickets(); // ✅ Fixed
+      fetchDashboardStats();;
     } catch (err) {
       console.error("Resolution error:", err);
       notify("Resolution failed", "error");
@@ -424,231 +558,236 @@ export default function UserDashboard({ user }) {
 
   // Apply date filter based on creation date
   // Helper: Get start of day for any date
-  const startOfDay = (date) => {
-    const d = new Date(date);
-    d.setHours(0, 0, 0, 0);
-    return d;
-  };
+  // const startOfDay = (date) => {
+  //   const d = new Date(date);
+  //   d.setHours(0, 0, 0, 0);
+  //   return d;
+  // };
 
   // Helper: Get end of day for any date
-  const endOfDay = (date) => {
-    const d = new Date(date);
-    d.setHours(23, 59, 59, 999);
-    return d;
-  };
+  // const endOfDay = (date) => {
+  //   const d = new Date(date);
+  //   d.setHours(23, 59, 59, 999);
+  //   return d;
+  // };
 
   // Apply date filter based on ticket's date field (not createdAt)
-  const applyDateFilter = (ticketsList) => {
-    if (dateFilter === "all") return ticketsList;
+  // const applyDateFilter = (ticketsList) => {
+  //   if (dateFilter === "all") return ticketsList;
 
-    const now = new Date();
-    const today = startOfDay(now);
-    const yesterday = startOfDay(new Date(now.setDate(now.getDate() - 1)));
-    now.setDate(now.getDate() + 1); // Restore
+  //   const now = new Date();
+  //   const today = startOfDay(now);
+  //   const yesterday = startOfDay(new Date(now.setDate(now.getDate() - 1)));
+  //   now.setDate(now.getDate() + 1); // Restore
 
-    // Start of current week (Monday)
-    const startOfWeek = new Date(today);
-    const day = today.getDay();
-    const diffToMonday = day === 0 ? 6 : day - 1;
-    startOfWeek.setDate(today.getDate() - diffToMonday);
+  //   // Start of current week (Monday)
+  //   const startOfWeek = new Date(today);
+  //   const day = today.getDay();
+  //   const diffToMonday = day === 0 ? 6 : day - 1;
+  //   startOfWeek.setDate(today.getDate() - diffToMonday);
 
-    // Start of current month
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  //   // Start of current month
+  //   const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
-    // Start of current quarter
-    const startOfQuarter = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
+  //   // Start of current quarter
+  //   const startOfQuarter = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
 
-    // Start of current year
-    const startOfYear = new Date(today.getFullYear(), 0, 1);
+  //   // Start of current year
+  //   const startOfYear = new Date(today.getFullYear(), 0, 1);
 
-    return ticketsList.filter(ticket => {
-      // Use the date field (which is the ticket's date) for filtering
-      if (!ticket.date) return false;
+  //   return ticketsList.filter(ticket => {
+  //     // Use the date field (which is the ticket's date) for filtering
+  //     if (!ticket.date) return false;
 
-      // Parse the ticket date (format: YYYY-MM-DD)
-      const ticketDateParts = ticket.date.split('-');
-      const ticketDate = new Date(
-        parseInt(ticketDateParts[0]),
-        parseInt(ticketDateParts[1]) - 1,
-        parseInt(ticketDateParts[2])
-      );
-      ticketDate.setHours(0, 0, 0, 0);
+  //     // Parse the ticket date (format: YYYY-MM-DD)
+  //     const ticketDateParts = ticket.date.split('-');
+  //     const ticketDate = new Date(
+  //       parseInt(ticketDateParts[0]),
+  //       parseInt(ticketDateParts[1]) - 1,
+  //       parseInt(ticketDateParts[2])
+  //     );
+  //     ticketDate.setHours(0, 0, 0, 0);
 
-      switch (dateFilter) {
-        case "today":
-          return ticketDate.getTime() === today.getTime();
-        case "yesterday":
-          return ticketDate.getTime() === yesterday.getTime();
-        case "week":
-          return ticketDate >= startOfWeek && ticketDate <= today;
-        case "month":
-          return ticketDate >= startOfMonth && ticketDate <= today;
-        case "quarter":
-          return ticketDate >= startOfQuarter && ticketDate <= today;
-        case "year":
-          return ticketDate >= startOfYear && ticketDate <= today;
-        default:
-          return true;
-      }
-    });
-  };
+  //     switch (dateFilter) {
+  //       case "today":
+  //         return ticketDate.getTime() === today.getTime();
+  //       case "yesterday":
+  //         return ticketDate.getTime() === yesterday.getTime();
+  //       case "week":
+  //         return ticketDate >= startOfWeek && ticketDate <= today;
+  //       case "month":
+  //         return ticketDate >= startOfMonth && ticketDate <= today;
+  //       case "quarter":
+  //         return ticketDate >= startOfQuarter && ticketDate <= today;
+  //       case "year":
+  //         return ticketDate >= startOfYear && ticketDate <= today;
+  //       default:
+  //         return true;
+  //     }
+  //   });
+  // };
 
   // Stats derived from tickets (respects date filter)
-  const stats = useMemo(() => {
-    // First filter by date
-    let filteredTickets = [...tickets];
+  // const stats = useMemo(() => {
+  //   // First filter by date
+  //   let filteredTickets = [...tickets];
 
-    if (dateFilter !== "all") {
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
+  //   if (dateFilter !== "all") {
+  //     const now = new Date();
+  //     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  //     const yesterday = new Date(today);
+  //     yesterday.setDate(yesterday.getDate() - 1);
 
-      const startOfWeek = new Date(today);
-      const day = today.getDay();
-      const diffToMonday = day === 0 ? 6 : day - 1;
-      startOfWeek.setDate(today.getDate() - diffToMonday);
+  //     const startOfWeek = new Date(today);
+  //     const day = today.getDay();
+  //     const diffToMonday = day === 0 ? 6 : day - 1;
+  //     startOfWeek.setDate(today.getDate() - diffToMonday);
 
-      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-      const startOfQuarter = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
-      const startOfYear = new Date(today.getFullYear(), 0, 1);
+  //     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  //     const startOfQuarter = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
+  //     const startOfYear = new Date(today.getFullYear(), 0, 1);
 
-      filteredTickets = filteredTickets.filter(ticket => {
-        if (!ticket.date) return false;
-        const dateParts = ticket.date.split('-');
-        const ticketDate = new Date(
-          parseInt(dateParts[0]),
-          parseInt(dateParts[1]) - 1,
-          parseInt(dateParts[2])
-        );
-        ticketDate.setHours(0, 0, 0, 0);
+  //     filteredTickets = filteredTickets.filter(ticket => {
+  //       if (!ticket.date) return false;
+  //       const dateParts = ticket.date.split('-');
+  //       const ticketDate = new Date(
+  //         parseInt(dateParts[0]),
+  //         parseInt(dateParts[1]) - 1,
+  //         parseInt(dateParts[2])
+  //       );
+  //       ticketDate.setHours(0, 0, 0, 0);
 
-        switch (dateFilter) {
-          case "today": return ticketDate.getTime() === today.getTime();
-          case "yesterday": return ticketDate.getTime() === yesterday.getTime();
-          case "week": return ticketDate >= startOfWeek && ticketDate <= today;
-          case "month": return ticketDate >= startOfMonth && ticketDate <= today;
-          case "quarter": return ticketDate >= startOfQuarter && ticketDate <= today;
-          case "year": return ticketDate >= startOfYear && ticketDate <= today;
-          default: return true;
-        }
-      });
-    }
+  //       switch (dateFilter) {
+  //         case "today": return ticketDate.getTime() === today.getTime();
+  //         case "yesterday": return ticketDate.getTime() === yesterday.getTime();
+  //         case "week": return ticketDate >= startOfWeek && ticketDate <= today;
+  //         case "month": return ticketDate >= startOfMonth && ticketDate <= today;
+  //         case "quarter": return ticketDate >= startOfQuarter && ticketDate <= today;
+  //         case "year": return ticketDate >= startOfYear && ticketDate <= today;
+  //         default: return true;
+  //       }
+  //     });
+  //   }
 
-    const open = filteredTickets.filter(t => t.status === "open").length;
-    const progress = filteredTickets.filter(t => t.status === "in-progress").length;
-    const resolved = filteredTickets.filter(t => t.status === "resolved").length;
-    const activeTickets = filteredTickets.filter(t => t.status !== "resolved");
-    const highRisk = activeTickets.filter(t => t.riskLevel === "high").length;
-    const mediumRisk = activeTickets.filter(t => t.riskLevel === "medium").length;
-    const lowRisk = activeTickets.filter(t => t.riskLevel === "low").length;
+  //   const open = filteredTickets.filter(t => t.status === "open").length;
+  //   const progress = filteredTickets.filter(t => t.status === "in-progress").length;
+  //   const resolved = filteredTickets.filter(t => t.status === "resolved").length;
+  //   const activeTickets = filteredTickets.filter(t => t.status !== "resolved");
+  //   const highRisk = activeTickets.filter(t => t.riskLevel === "high").length;
+  //   const mediumRisk = activeTickets.filter(t => t.riskLevel === "medium").length;
+  //   const lowRisk = activeTickets.filter(t => t.riskLevel === "low").length;
 
-    return {
-      open, progress, resolved, total: filteredTickets.length,
-      highRisk, mediumRisk, lowRisk, activeTotal: activeTickets.length
-    };
-  }, [tickets, dateFilter]);
+  //   return {
+  //     open, progress, resolved, total: filteredTickets.length,
+  //     highRisk, mediumRisk, lowRisk, activeTotal: activeTickets.length
+  //   };
+  // }, [tickets, dateFilter]);
+  // Use stats from backend instead of calculating
+  const stats = dashboardStats;
+
   // Handle card click to filter table
   const handleCardClick = (status) => {
     setSelectedCardFilter(status);
     setFilterStatus(status);
   };
 
-  // Filtered and sorted tickets
-  const filtered = useMemo(() => {
-    let filteredTickets = [...tickets];
+  // // Filtered and sorted tickets
+  // const filtered = useMemo(() => {
+  //   let filteredTickets = [...tickets];
 
-    // Apply search filter
-    if (search) {
-      filteredTickets = filteredTickets.filter(t =>
-        (t.systemName || "").toLowerCase().includes(search.toLowerCase()) ||
-        (t.reportedByName || "").toLowerCase().includes(search.toLowerCase()) ||
-        (t.problemDetails || "").toLowerCase().includes(search.toLowerCase()) ||
-        (t.affectedUser || "").toLowerCase().includes(search.toLowerCase())
-      );
-    }
+  //   // Apply search filter
+  //   if (search) {
+  //     filteredTickets = filteredTickets.filter(t =>
+  //       (t.systemName || "").toLowerCase().includes(search.toLowerCase()) ||
+  //       (t.reportedByName || "").toLowerCase().includes(search.toLowerCase()) ||
+  //       (t.problemDetails || "").toLowerCase().includes(search.toLowerCase()) ||
+  //       (t.affectedUser || "").toLowerCase().includes(search.toLowerCase())
+  //     );
+  //   }
 
-    // Apply status filter
-    if (filterStatus !== "all") {
-      filteredTickets = filteredTickets.filter(t => t.status === filterStatus);
-    }
+  //   // Apply status filter
+  //   if (filterStatus !== "all") {
+  //     filteredTickets = filteredTickets.filter(t => t.status === filterStatus);
+  //   }
 
-    // Apply date filter using the date field
-    if (dateFilter !== "all") {
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
+  //   // Apply date filter using the date field
+  //   if (dateFilter !== "all") {
+  //     const now = new Date();
+  //     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  //     const yesterday = new Date(today);
+  //     yesterday.setDate(yesterday.getDate() - 1);
 
-      const startOfWeek = new Date(today);
-      const day = today.getDay();
-      const diffToMonday = day === 0 ? 6 : day - 1;
-      startOfWeek.setDate(today.getDate() - diffToMonday);
+  //     const startOfWeek = new Date(today);
+  //     const day = today.getDay();
+  //     const diffToMonday = day === 0 ? 6 : day - 1;
+  //     startOfWeek.setDate(today.getDate() - diffToMonday);
 
-      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-      const startOfQuarter = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
-      const startOfYear = new Date(today.getFullYear(), 0, 1);
+  //     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  //     const startOfQuarter = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
+  //     const startOfYear = new Date(today.getFullYear(), 0, 1);
 
-      filteredTickets = filteredTickets.filter(ticket => {
-        if (!ticket.date) return false;
+  //     filteredTickets = filteredTickets.filter(ticket => {
+  //       if (!ticket.date) return false;
 
-        // Parse ticket date (format: YYYY-MM-DD)
-        const dateParts = ticket.date.split('-');
-        const ticketDate = new Date(
-          parseInt(dateParts[0]),
-          parseInt(dateParts[1]) - 1,
-          parseInt(dateParts[2])
-        );
-        ticketDate.setHours(0, 0, 0, 0);
+  //       // Parse ticket date (format: YYYY-MM-DD)
+  //       const dateParts = ticket.date.split('-');
+  //       const ticketDate = new Date(
+  //         parseInt(dateParts[0]),
+  //         parseInt(dateParts[1]) - 1,
+  //         parseInt(dateParts[2])
+  //       );
+  //       ticketDate.setHours(0, 0, 0, 0);
 
-        switch (dateFilter) {
-          case "today":
-            return ticketDate.getTime() === today.getTime();
-          case "yesterday":
-            return ticketDate.getTime() === yesterday.getTime();
-          case "week":
-            return ticketDate >= startOfWeek && ticketDate <= today;
-          case "month":
-            return ticketDate >= startOfMonth && ticketDate <= today;
-          case "quarter":
-            return ticketDate >= startOfQuarter && ticketDate <= today;
-          case "year":
-            return ticketDate >= startOfYear && ticketDate <= today;
-          default:
-            return true;
-        }
-      });
-    }
+  //       switch (dateFilter) {
+  //         case "today":
+  //           return ticketDate.getTime() === today.getTime();
+  //         case "yesterday":
+  //           return ticketDate.getTime() === yesterday.getTime();
+  //         case "week":
+  //           return ticketDate >= startOfWeek && ticketDate <= today;
+  //         case "month":
+  //           return ticketDate >= startOfMonth && ticketDate <= today;
+  //         case "quarter":
+  //           return ticketDate >= startOfQuarter && ticketDate <= today;
+  //         case "year":
+  //           return ticketDate >= startOfYear && ticketDate <= today;
+  //         default:
+  //           return true;
+  //       }
+  //     });
+  //   }
 
-    // Apply sorting
-    filteredTickets.sort((a, b) => {
-      if (sortBy === "date") {
-        const dateA = new Date(a.date);
-        const dateB = new Date(b.date);
-        return dateB - dateA;
-      }
-      if (sortBy === "status") return a.status.localeCompare(b.status);
-      if (sortBy === "risk") {
-        const riskOrder = { high: 3, medium: 2, low: 1 };
-        return (riskOrder[b.riskLevel] || 1) - (riskOrder[a.riskLevel] || 1);
-      }
-      return 0;
-    });
+  //   // Apply sorting
+  //   filteredTickets.sort((a, b) => {
+  //     if (sortBy === "date") {
+  //       const dateA = new Date(a.date);
+  //       const dateB = new Date(b.date);
+  //       return dateB - dateA;
+  //     }
+  //     if (sortBy === "status") return a.status.localeCompare(b.status);
+  //     if (sortBy === "risk") {
+  //       const riskOrder = { high: 3, medium: 2, low: 1 };
+  //       return (riskOrder[b.riskLevel] || 1) - (riskOrder[a.riskLevel] || 1);
+  //     }
+  //     return 0;
+  //   });
 
-    return filteredTickets;
-  }, [tickets, search, filterStatus, sortBy, dateFilter]);
+  //   return filteredTickets;
+  // }, [tickets, search, filterStatus, sortBy, dateFilter]);
+  
+  const filtered = tickets;
 
-  const statusChartData = [
-    { name: "Open", value: stats.open, color: COLORS.open },
-    { name: "In Progress", value: stats.progress, color: COLORS["in-progress"] },
-    { name: "Resolved", value: stats.resolved, color: COLORS.resolved },
-  ].filter(item => item.value > 0);
+  // const statusChartData = [
+  //   { name: "Open", value: stats.open, color: COLORS.open },
+  //   { name: "In Progress", value: stats.progress, color: COLORS["in-progress"] },
+  //   { name: "Resolved", value: stats.resolved, color: COLORS.resolved },
+  // ].filter(item => item.value > 0);
 
-  const riskChartData = [
-    { name: "Low Risk", value: stats.lowRisk, color: COLORS.low },
-    { name: "Medium Risk", value: stats.mediumRisk, color: COLORS.medium },
-    { name: "High Risk", value: stats.highRisk, color: COLORS.high },
-  ].filter(item => item.value > 0);
+  // const riskChartData = [
+  //   { name: "Low Risk", value: stats.lowRisk, color: COLORS.low },
+  //   { name: "Medium Risk", value: stats.mediumRisk, color: COLORS.medium },
+  //   { name: "High Risk", value: stats.highRisk, color: COLORS.high },
+  // ].filter(item => item.value > 0);
 
   // Date filter buttons
   const dateFilterButtons = [
@@ -661,8 +800,100 @@ export default function UserDashboard({ user }) {
     { label: "This Year", value: "year" },
   ];
 
+
+  // Real-time update indicator
+  const RealtimeIndicator = () => {
+    if (!realtimeUpdate) return null;
+
+    setTimeout(() => setRealtimeUpdate(null), 3000);
+
+    return (
+      <div className="fixed bottom-4 right-4 z-50 animate-slide-in">
+        <div className="bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2">
+          <div className="animate-pulse">
+            <Activity size={16} />
+          </div>
+          <span className="text-sm">{realtimeUpdate.message}</span>
+        </div>
+      </div>
+    );
+  };
+
+  // Loading overlay
+  const LoadingOverlay = () => {
+    if (!isLoading) return null;
+    return (
+      <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-4 shadow-xl">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        </div>
+      </div>
+    );
+  };
+
+  // Pagination controls
+  const PaginationControls = () => (
+    <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-t border-gray-200">
+      <div className="text-sm text-gray-500">
+        Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, totalCount)} of {totalCount} tickets
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+          disabled={currentPage === 1}
+          className="px-3 py-1 border border-gray-300 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+        >
+          <ChevronLeft size={16} />
+        </button>
+        <span className="px-3 py-1 text-sm">
+          Page {currentPage} of {totalPages}
+        </span>
+        <button
+          onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+          disabled={currentPage === totalPages}
+          className="px-3 py-1 border border-gray-300 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+        >
+          <ChevronRight size={16} />
+        </button>
+      </div>
+    </div>
+  );
+
+  // Auto-refresh toggle button
+  const AutoRefreshToggle = () => (
+    <button
+      onClick={() => setAutoRefresh(!autoRefresh)}
+      className={`px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${autoRefresh
+        ? 'bg-green-100 text-green-700'
+        : 'bg-gray-100 text-gray-500'
+        }`}
+      title={autoRefresh ? 'Auto-refresh is ON' : 'Auto-refresh is OFF'}
+    >
+      <Activity size={14} className={autoRefresh ? 'animate-pulse' : ''} />
+      Auto-refresh
+    </button>
+  );
+
+  // Manual refresh button
+  const ManualRefreshButton = () => (
+    <button
+      onClick={() => {
+        fetchDashboardStats();
+        fetchPaginatedTickets();
+        notify('Dashboard refreshed!', 'success');
+      }}
+      className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium flex items-center gap-2"
+    >
+      <RefreshCw size={14} />
+      Refresh
+    </button>
+  );
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-4 md:p-6">
+      {/* ✅ Add these new components */}
+      <RealtimeIndicator />
+      <LoadingOverlay />
 
       {/* NOTIFICATIONS */}
       <div className="fixed top-4 right-4 space-y-2 z-50">
@@ -858,9 +1089,6 @@ export default function UserDashboard({ user }) {
               <Legend onClick={(e) => handleCardClick(e.value.toLowerCase().replace(" ", "-"))} />
             </PieChart>
           </ResponsiveContainer>
-          <p className="text-xs text-gray-400 text-center mt-2">
-            * Click on legend or cards to filter
-          </p>
         </div>
 
         <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
@@ -895,40 +1123,49 @@ export default function UserDashboard({ user }) {
 
       {/* FILTERS */}
       <div className="bg-white rounded-xl shadow-sm p-4 mb-4 border border-gray-100">
-        <div className="flex flex-wrap gap-2 items-center mb-3">
-          <div className="relative flex-1 min-w-[180px]">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
-            <input
-              className="pl-9 pr-3 py-2 border border-gray-200 rounded-lg w-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Search tickets..."
-              onChange={(e) => setSearch(e.target.value)}
-            />
+        <div className="flex flex-wrap gap-2 items-center justify-between">
+          <div className="flex flex-wrap gap-2 items-center">
+            {/* Your existing filter controls */}
+            <div className="relative flex-1 min-w-[180px]">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+              <input
+                className="pl-9 pr-3 py-2 border border-gray-200 rounded-lg w-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Search tickets..."
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+
+            <select
+              className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={(e) => setFilterStatus(e.target.value)}
+              value={filterStatus}
+            >
+              <option value="all">All Status</option>
+              <option value="open">Open</option>
+              <option value="in-progress">In Progress</option>
+              <option value="resolved">Resolved</option>
+            </select>
+
+            <select
+              className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={(e) => setSortBy(e.target.value)}
+              value={sortBy}
+            >
+              <option value="date">Sort by Date</option>
+              <option value="status">Sort by Status</option>
+              <option value="risk">Sort by Risk</option>
+            </select>
           </div>
 
-          <select
-            className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            onChange={(e) => setFilterStatus(e.target.value)}
-            value={filterStatus}
-          >
-            <option value="all">All Status</option>
-            <option value="open">Open</option>
-            <option value="in-progress">In Progress</option>
-            <option value="resolved">Resolved</option>
-          </select>
-
-          <select
-            className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            onChange={(e) => setSortBy(e.target.value)}
-            value={sortBy}
-          >
-            <option value="date">Sort by Date</option>
-            <option value="status">Sort by Status</option>
-            <option value="risk">Sort by Risk</option>
-          </select>
+          {/* Add these buttons */}
+          <div className="flex gap-2">
+            <AutoRefreshToggle />
+            <ManualRefreshButton />
+          </div>
         </div>
 
-        {/* Date Filter Buttons */}
-        <div className="flex flex-wrap gap-2">
+        {/* Date Filter Buttons - your existing code */}
+        <div className="flex flex-wrap gap-2 mt-3">
           <Calendar size={16} className="text-gray-400 self-center" />
           {dateFilterButtons.map((button) => (
             <button
@@ -1098,7 +1335,9 @@ export default function UserDashboard({ user }) {
             </tbody>
           </table>
         </div>
+        <PaginationControls />
       </div>
+
 
       {/* VIEW TICKET MODAL - Complete with all fields */}
       {viewTicket && (
