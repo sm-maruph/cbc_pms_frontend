@@ -23,7 +23,7 @@ import {
 } from "../../services/api";
 
 // Add this new import for Socket.IO
-import socketService from "../../services/socket";
+import socketService from "../../services/Socket";
 
 
 const statusConfig = {
