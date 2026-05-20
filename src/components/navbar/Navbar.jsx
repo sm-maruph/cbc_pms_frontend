@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
+
 import {
-  FaHome,
   FaTicketAlt,
   FaPlusCircle,
   FaUsers,
@@ -11,302 +11,602 @@ import {
   FaSignOutAlt,
   FaBars,
   FaTimes,
-  FaChevronDown
+  FaChevronDown,
 } from "react-icons/fa";
+
 import { MdDashboard } from "react-icons/md";
-import { IoMdNotificationsOutline } from "react-icons/io";
+
 import logo from "../images/cbc_logo.png";
-import NotificationBell from '../NotificationBell';
+import NotificationBell from "../NotificationBell";
 
 export default function Navbar({ user, onLogout }) {
   const navigate = useNavigate();
+
   const [open, setOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+
   const menuRef = useRef(null);
   const burgerRef = useRef(null);
-  const profileMenuRef = useRef(null);
+  const profileRef = useRef(null);
 
   const isAdmin = user?.role === "admin";
 
-  // Icons for menu items using react-icons
-  const menuIcons = {
-    Dashboard: <MdDashboard className="w-4 h-4" />,
-    "My Tickets": <FaTicketAlt className="w-4 h-4" />,
-    "Create Ticket": <FaPlusCircle className="w-4 h-4" />,
-    "Create New Tickets": <FaPlusCircle className="w-4 h-4" />,
-    "Manage Users": <FaUsers className="w-4 h-4" />,
-    Report: <FaChartBar className="w-4 h-4" />,
-  };
+  const navLinks = isAdmin
+    ? [
+      {
+        name: "Dashboard",
+        path: "/admin",
+        icon: <MdDashboard />,
+      },
+      {
+        name: "Create Ticket",
+        path: "/create-ticket",
+        icon: <FaPlusCircle />,
+      },
+      {
+        name: "Manage Users",
+        path: "/admin/users",
+        icon: <FaUsers />,
+      },
+      {
+        name: "Reports",
+        path: "/admin/report",
+        icon: <FaChartBar />,
+      },
+    ]
+    : [
+      {
+        name: "Dashboard",
+        path: "/dashboard",
+        icon: <MdDashboard />,
+      },
+      {
+        name: "My Tickets",
+        path: "/my-tickets",
+        icon: <FaTicketAlt />,
+      },
+      {
+        name: "Create Ticket",
+        path: "/create-ticket",
+        icon: <FaPlusCircle />,
+      },
+      {
+        name: "Reports",
+        path: "/report",
+        icon: <FaChartBar />,
+      },
+    ];
 
   useEffect(() => {
-    function onKey(e) {
-      if (e.key === "Escape" && open) setOpen(false);
-      if (e.key === "Escape" && profileOpen) setProfileOpen(false);
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, profileOpen]);
+    const handleKey = (e) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        setProfileOpen(false);
+      }
+    };
+
+    document.addEventListener("keydown", handleKey);
+
+    return () => document.removeEventListener("keydown", handleKey);
+  }, []);
 
   useEffect(() => {
-    function onClick(e) {
+    const handleClickOutside = (e) => {
       if (
-        open &&
         menuRef.current &&
         !menuRef.current.contains(e.target) &&
         !burgerRef.current?.contains(e.target)
       ) {
         setOpen(false);
       }
+
       if (
-        profileOpen &&
-        profileMenuRef.current &&
-        !profileMenuRef.current.contains(e.target)
+        profileRef.current &&
+        !profileRef.current.contains(e.target)
       ) {
         setProfileOpen(false);
       }
-    }
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [open, profileOpen]);
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+
+    return () =>
+      document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const handleLogout = () => {
     setOpen(false);
     setProfileOpen(false);
+
     onLogout();
+
     navigate("/");
   };
 
-  const navLinks = isAdmin
-    ? [
-      { name: "Dashboard", path: "/admin" },
-      { name: "Create New Tickets", path: "/create-ticket" },
-      { name: "Manage Users", path: "/admin/users" },
-      { name: "Report", path: "/admin/report" },
-    ]
-    : [
-      { name: "Dashboard", path: "/dashboard" },
-      { name: "My Tickets", path: "/my-tickets" },
-      { name: "Create Ticket", path: "/create-ticket" },
-      { name: "Report", path: "/report" },
-    ];
-
   const animationStyles = `
-    @keyframes slideIn {
-      from { transform: translateX(100%); }
-      to { transform: translateX(0); }
+    @keyframes slideInRight {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
     }
-    @keyframes slideOut {
-      from { transform: translateX(0); }
-      to { transform: translateX(100%); }
-    }
+
     @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
+      from {
+        opacity: 0;
+      }
+      to {
+        opacity: 1;
+      }
     }
-    @keyframes scaleIn {
-      from { transform: scale(0.95); opacity: 0; }
-      to { transform: scale(1); opacity: 1; }
+
+    @keyframes dropdown {
+      from {
+        opacity: 0;
+        transform: translateY(-10px) scale(0.96);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
     }
-    .animate-slide-in { animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
-    .animate-slide-out { animation: slideOut 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
-    .animate-fade-in { animation: fadeIn 0.2s ease-in-out forwards; }
-    .animate-scale-in { animation: scaleIn 0.2s ease-out forwards; }
+
+    @keyframes floatingLogo {
+      0%,100% {
+        transform: translateY(0px);
+      }
+
+      50% {
+        transform: translateY(-5px);
+      }
+    }
+
+    .animate-slideInRight {
+      animation: slideInRight 0.35s ease forwards;
+    }
+
+    .animate-fadeIn {
+      animation: fadeIn 0.25s ease forwards;
+    }
+
+    .animate-dropdown {
+      animation: dropdown 0.22s ease forwards;
+    }
+
+    .animate-floatingLogo {
+      animation: floatingLogo 4s ease-in-out infinite;
+    }
   `;
 
   return (
     <>
       <style>{animationStyles}</style>
-      <nav className="flex items-center justify-between px-4 py-1 bg-gradient-to-r from-slate-900 via-blue-900 to-slate-900 shadow-lg sticky top-0 z-50 w-full">
 
-        {/* LEFT SECTION - IT Support Portal Text */}
-        <div className="flex items-center gap-2">
-          <div className="text-left">
-            <p className="text-sm md:text-lg font-bold text-white leading-tight tracking-wide">IT Support Portal</p>
-            <p className="text-[9px] md:text-[11px] text-blue-200/80">Commercial Bank of Ceylon</p>
-          </div>
-        </div>
+      <nav className="sticky top-0 z-50 w-full overflow-visible border-b border-white/10 backdrop-blur-xl bg-gradient-to-r from-slate-950 via-blue-950 to-slate-950 shadow-2xl">
 
-        {/* CENTER - Desktop Navigation Links */}
-        <ul className="hidden lg:flex items-center gap-1">
-          {navLinks.map((link) => (
-            <li key={link.name}>
-              <Link
-                to={link.path}
-                className="flex items-center gap-1.5 px-2.5 py-1 text-sm font-medium text-gray-200 hover:text-white transition-colors duration-200 rounded-lg hover:bg-white/10"
-              >
-                {menuIcons[link.name]}
-                {link.name}
-              </Link>
-            </li>
-          ))}
-          <li><div className="relative">
+        <div className="h-[72px] sm:h-[78px] lg:h-[84px] px-3 sm:px-5 lg:px-8 flex items-center">
+
+          {/* LEFT SECTION */}
+          <div className="flex items-center gap-3 min-w-0">
+
+            {/* MOBILE MENU BUTTON */}
             <button
-              onClick={() => setProfileOpen(!profileOpen)}
-              className="flex items-center gap-1.5 px-1.5 py-0.5 bg-white/5 rounded-lg hover:bg-white/10 transition-all duration-200 cursor-pointer"
+              ref={burgerRef}
+              onClick={() => setOpen(!open)}
+              className="
+                lg:hidden
+                w-10
+                h-10
+                rounded-xl
+                bg-white/10
+                hover:bg-white/20
+                border
+                border-white/10
+                transition-all
+                duration-300
+                flex
+                items-center
+                justify-center
+              "
             >
-              <div className="w-7 h-7 bg-gradient-to-br from-blue-400 to-cyan-500 rounded-full flex items-center justify-center">
-                <FaUserCircle className="text-white text-base" />
-              </div>
-              <div className="hidden lg:flex flex-col">
-                <span className="text-xs font-semibold text-white leading-tight">
-                  {user?.name?.split(' ')[0]}
-                </span>
-                <span className="text-[9px] text-blue-200 leading-tight">
-                  {user?.role?.toUpperCase()}
-                </span>
-              </div>
-              <FaChevronDown className={`w-2.5 h-2.5 text-white transition-transform duration-200 ${profileOpen ? 'rotate-180' : ''}`} />
+              {open ? (
+                <FaTimes className="text-white text-sm" />
+              ) : (
+                <FaBars className="text-white text-sm" />
+              )}
             </button>
 
-            {/* Profile Dropdown Menu */}
-            {profileOpen && (
-              <div
-                ref={profileMenuRef}
-                className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-xl py-2 z-50 animate-scale-in"
+            {/* TITLE */}
+            <div className="hidden sm:flex flex-col leading-tight">
+              <h1 className="text-white font-bold text-xl md:text-base tracking-wide">
+                IT Support Portal
+              </h1>
+
+              <p className="text-[10px] md:text-xs text-blue-200/70">
+                Commercial Bank of Ceylon
+              </p>
+            </div>
+          </div>
+
+          {/* CENTER DESKTOP MENU */}
+          <div className="hidden lg:flex items-center gap-2 mx-auto">
+            {navLinks.map((link) => (
+              <Link
+                key={link.name}
+                to={link.path}
+                className="
+                  group
+                  relative
+                  flex
+                  items-center
+                  gap-2
+                  px-4
+                  py-2
+                  rounded-xl
+                  text-sm
+                  font-medium
+                  text-slate-200
+                  hover:text-white
+                  hover:bg-white/10
+                  transition-all
+                  duration-300
+                  overflow-hidden
+                "
               >
-                <div className="px-4 py-3 border-b border-gray-100">
-                  <p className="text-sm font-semibold text-gray-800">{user?.name}</p>
-                  <p className="text-xs text-gray-500">{user?.email}</p>
-                  <p className="text-xs text-gray-500 mt-1">{user?.department}</p>
-                  <span className="inline-block mt-1 px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">
-                    {user?.role?.toUpperCase()}
+                <span className="text-sm group-hover:scale-110 transition-transform duration-300">
+                  {link.icon}
+                </span>
+
+                {link.name}
+
+                <span className="absolute bottom-0 left-0 h-[2px] w-0 bg-cyan-400 group-hover:w-full transition-all duration-300"></span>
+              </Link>
+            ))}
+          </div>
+
+          {/* RIGHT SECTION */}
+          <div className="flex items-center gap-2 sm:gap-3 ml-auto">
+
+            {/* NOTIFICATION */}
+            <div className="relative">
+              <NotificationBell user={user} />
+            </div>
+
+            {/* PROFILE */}
+            <div className="relative" ref={profileRef}>
+              <button
+                onClick={() => setProfileOpen(!profileOpen)}
+                className="
+                  flex
+                  items-center
+                  gap-2
+                  bg-white/10
+                  hover:bg-white/15
+                  border
+                  border-white/10
+                  rounded-2xl
+                  px-2
+                  sm:px-3
+                  py-1.5
+                  transition-all
+                  duration-300
+                "
+              >
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center shadow-lg">
+                  <FaUserCircle className="text-white text-lg" />
+                </div>
+
+                <div className="hidden md:flex flex-col text-left leading-tight">
+                  <span className="text-xs font-semibold text-white">
+                    {user?.name?.split(" ")[0]}
+                  </span>
+
+                  <span className="text-[10px] uppercase tracking-wide text-blue-200">
+                    {user?.role}
                   </span>
                 </div>
 
-                <Link
-                  to="/profile"
-                  onClick={() => setProfileOpen(false)}
-                  className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-200"
+                <FaChevronDown
+                  className={`text-[10px] text-white transition-transform duration-300 ${profileOpen ? "rotate-180" : ""
+                    }`}
+                />
+              </button>
+
+              {/* PROFILE DROPDOWN */}
+              {profileOpen && (
+                <div
+                  className="
+                    absolute
+                    right-0
+                    mt-3
+                    w-72
+                    rounded-2xl
+                    border
+                    border-white/10
+                    bg-white
+                    shadow-2xl
+                    overflow-hidden
+                    animate-dropdown
+                  "
                 >
-                  <FaUserCircle className="w-4 h-4" />
-                  View Profile
-                </Link>
+                  <div className="p-5 bg-gradient-to-r from-blue-50 to-cyan-50 border-b">
+                    <div className="flex items-center gap-3">
 
-                <Link
-                  to="/edit-profile"
-                  onClick={() => setProfileOpen(false)}
-                  className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-200"
-                >
-                  <FaEdit className="w-4 h-4" />
-                  Edit Profile
-                </Link>
+                      <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center">
+                        <FaUserCircle className="text-white text-3xl" />
+                      </div>
 
-                <div className="border-t border-gray-100 my-1"></div>
+                      <div>
+                        <h3 className="font-bold text-gray-800 text-sm">
+                          {user?.name}
+                        </h3>
 
-                <button
-                  onClick={handleLogout}
-                  className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors duration-200"
-                >
-                  <FaSignOutAlt className="w-4 h-4" />
-                  Logout
-                </button>
-              </div>
-            )}
-          </div></li>
-        </ul>
+                        <p className="text-xs text-gray-500">
+                          {user?.email}
+                        </p>
 
-        {/* RIGHT SECTION - Profile, Notification, and Logo */}
-        <div className="flex items-center gap-3">
-          {/* User Profile Dropdown */}
+                        <span className="inline-block mt-1 px-2 py-1 rounded-full bg-blue-100 text-blue-700 text-[10px] font-semibold uppercase">
+                          {user?.role}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
 
+                  <div className="p-2">
 
-          {/* Notification Bell */}
-          <NotificationBell user={user} />
+                    <Link
+                      to="/profile"
+                      onClick={() => setProfileOpen(false)}
+                      className="
+                        flex
+                        items-center
+                        gap-3
+                        px-4
+                        py-3
+                        rounded-xl
+                        text-sm
+                        text-gray-700
+                        hover:bg-slate-100
+                        transition-all
+                        duration-200
+                      "
+                    >
+                      <FaUserCircle />
+                      View Profile
+                    </Link>
 
-          {/* LOGO - Very Large but positioned absolutely/relatively to not expand navbar */}
-          <div className="relative flex items-center">
+                    <Link
+                      to="/edit-profile"
+                      onClick={() => setProfileOpen(false)}
+                      className="
+                        flex
+                        items-center
+                        gap-3
+                        px-4
+                        py-3
+                        rounded-xl
+                        text-sm
+                        text-gray-700
+                        hover:bg-slate-100
+                        transition-all
+                        duration-200
+                      "
+                    >
+                      <FaEdit />
+                      Edit Profile
+                    </Link>
+
+                    <button
+                      onClick={handleLogout}
+                      className="
+                        w-full
+                        flex
+                        items-center
+                        gap-3
+                        px-4
+                        py-3
+                        rounded-xl
+                        text-sm
+                        text-red-600
+                        hover:bg-red-50
+                        transition-all
+                        duration-200
+                      "
+                    >
+                      <FaSignOutAlt />
+                      Logout
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* LOGO ALWAYS LAST RIGHT */}
             <Link
               to={isAdmin ? "/admin" : "/dashboard"}
-              className="block leading-none"
+              className="flex items-center justify-end flex-shrink-0 ml-1 sm:ml-3"
             >
               <img
                 src={logo}
                 alt="CBC Logo"
-                className="h-52 w-52 md:h-20 lg:h-30 bg-transparent rounded-lg object-fit"
-                style={{ maxHeight: 'none' }}
+                className="
+                  h-28
+                  sm:h-32
+                  md:h-36
+                  lg:h-40
+                  xl:h-44
+                  w-auto
+                  object-contain
+                  -my-10
+                  drop-shadow-[0_10px_30px_rgba(59,130,246,0.45)]
+                  animate-floatingLogo
+                  hover:scale-105
+                  transition-all
+                  duration-500
+                "
               />
             </Link>
           </div>
-
-          {/* MOBILE MENU BUTTON */}
-          <button
-            ref={burgerRef}
-            className="lg:hidden flex flex-col gap-1 p-1 rounded-lg bg-white/5 hover:bg-white/10 transition-all duration-200"
-            onClick={() => setOpen(!open)}
-          >
-            {open ? <FaTimes className="w-4 h-4 text-white" /> : <FaBars className="w-4 h-4 text-white" />}
-          </button>
         </div>
 
-        {/* MOBILE MENU SLIDEOUT */}
-        <div
-          ref={menuRef}
-          className={`fixed top-0 right-0 h-full w-4/5 max-w-sm bg-gradient-to-b from-slate-900 via-blue-900 to-slate-900 shadow-2xl lg:hidden z-40 ${open ? "animate-slide-in" : "animate-slide-out"}`}
-        >
-          <div className="p-5 pt-20">
-            <div className="mb-5 pb-5 border-b border-white/10">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-cyan-500 rounded-full flex items-center justify-center">
-                  <FaUserCircle className="text-white text-2xl" />
+        {/* MOBILE MENU */}
+        {open && (
+          <>
+            {/* OVERLAY */}
+            <div
+              className="
+                fixed
+                inset-0
+                bg-black/60
+                backdrop-blur-sm
+                z-40
+                animate-fadeIn
+                lg:hidden
+              "
+              onClick={() => setOpen(false)}
+            />
+
+            {/* DRAWER */}
+            <div
+              ref={menuRef}
+              className="
+                fixed
+                top-0
+                left-0
+                h-full
+                w-[85%]
+                max-w-[340px]
+                bg-gradient-to-b
+                from-slate-950
+                via-blue-950
+                to-slate-900
+                z-50
+                shadow-2xl
+                animate-slideInRight
+                lg:hidden
+                border-r
+                border-white/10
+              "
+            >
+              <div className="p-5">
+
+                {/* USER INFO */}
+                <div className="flex items-center gap-3 pb-6 border-b border-white/10">
+
+                  <div className="w-14 h-14 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center">
+                    <FaUserCircle className="text-white text-3xl" />
+                  </div>
+
+                  <div>
+                    <h2 className="text-white font-semibold text-sm">
+                      {user?.name}
+                    </h2>
+
+                    <p className="text-blue-200 text-xs">
+                      {user?.department}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-bold text-white">{user?.name}</p>
-                  <p className="text-[11px] text-blue-200">
-                    {user?.role?.toUpperCase()} • {user?.department}
-                  </p>
+
+                {/* MOBILE LINKS */}
+                <div className="mt-6 space-y-2">
+                  {navLinks.map((link) => (
+                    <Link
+                      key={link.name}
+                      to={link.path}
+                      onClick={() => setOpen(false)}
+                      className="
+                        flex
+                        items-center
+                        gap-3
+                        px-4
+                        py-3
+                        rounded-2xl
+                        text-slate-200
+                        hover:bg-white/10
+                        hover:text-white
+                        transition-all
+                        duration-300
+                        text-sm
+                        font-medium
+                      "
+                    >
+                      <span className="text-base">
+                        {link.icon}
+                      </span>
+
+                      {link.name}
+                    </Link>
+                  ))}
+                </div>
+
+                {/* MOBILE PROFILE */}
+                <div className="mt-8 pt-6 border-t border-white/10 space-y-2">
+
+                  <Link
+                    to="/profile"
+                    onClick={() => setOpen(false)}
+                    className="
+                      flex
+                      items-center
+                      gap-3
+                      px-4
+                      py-3
+                      rounded-2xl
+                      text-slate-200
+                      hover:bg-white/10
+                      transition-all
+                    "
+                  >
+                    <FaUserCircle />
+                    View Profile
+                  </Link>
+
+                  <Link
+                    to="/edit-profile"
+                    onClick={() => setOpen(false)}
+                    className="
+                      flex
+                      items-center
+                      gap-3
+                      px-4
+                      py-3
+                      rounded-2xl
+                      text-slate-200
+                      hover:bg-white/10
+                      transition-all
+                    "
+                  >
+                    <FaEdit />
+                    Edit Profile
+                  </Link>
+
+                  <button
+                    onClick={handleLogout}
+                    className="
+                      w-full
+                      flex
+                      items-center
+                      gap-3
+                      px-4
+                      py-3
+                      rounded-2xl
+                      text-red-300
+                      hover:bg-red-500/20
+                      transition-all
+                    "
+                  >
+                    <FaSignOutAlt />
+                    Logout
+                  </button>
                 </div>
               </div>
             </div>
-
-            <div className="space-y-1">
-              {navLinks.map((link) => (
-                <Link
-                  key={link.name}
-                  to={link.path}
-                  onClick={() => setOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-200 hover:text-white hover:bg-white/10 transition-all duration-200 text-sm font-medium"
-                >
-                  {menuIcons[link.name]}
-                  {link.name}
-                </Link>
-              ))}
-            </div>
-
-            {/* Mobile Profile Links */}
-            <div className="mt-5 pt-5 border-t border-white/10">
-              <Link
-                to="/profile"
-                onClick={() => setOpen(false)}
-                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-200 hover:text-white hover:bg-white/10 transition-all duration-200 text-sm font-medium"
-              >
-                <FaUserCircle className="w-4 h-4" />
-                View Profile
-              </Link>
-              <Link
-                to="/edit-profile"
-                onClick={() => setOpen(false)}
-                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-200 hover:text-white hover:bg-white/10 transition-all duration-200 text-sm font-medium"
-              >
-                <FaEdit className="w-4 h-4" />
-                Edit Profile
-              </Link>
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-red-300 hover:text-red-200 hover:bg-red-500/20 transition-all duration-200 text-sm font-medium"
-              >
-                <FaSignOutAlt className="w-4 h-4" />
-                Logout
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* OVERLAY */}
-        {open && (
-          <div
-            className="fixed inset-0 bg-black/50 lg:hidden z-30 animate-fade-in"
-            onClick={() => setOpen(false)}
-          />
+          </>
         )}
       </nav>
     </>
