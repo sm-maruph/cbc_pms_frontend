@@ -61,6 +61,27 @@ export const getPaginatedTickets = async (token, params = {}) => {
     return response.json();
 };
 
+// ✅ NEW: Get top 10 systems (styled like existing APIs)
+export const getTopSystems = async (token, dateFilter = 'all') => {
+    const response = await fetch(`${API_BASE}/tickets/dashboard/top-systems?dateFilter=${dateFilter}`, {
+        headers: getHeaders(token)
+    });
+    if (!response.ok) throw new Error('Failed to fetch top systems');
+    return response.json();
+};
+
+// ✅ NEW: Get currently down ATMs (styled like existing APIs)
+export const getDownAtms = async (token) => {
+    const response = await fetch(`${API_BASE}/tickets/dashboard/down-atms`, {
+        headers: getHeaders(token)
+    });
+    if (!response.ok) throw new Error('Failed to fetch down ATMs');
+    return response.json();
+};
+
+
+
+
 // Reports
 export const getReportData = (range, startDate, endDate, token) => {
     let url = `/reports?range=${range}`;
@@ -158,6 +179,10 @@ export const validateBulkTickets = async (ticketsData, token) => {
 export const bulkImportTickets = async (ticketsData, token) => {
     return request('/tickets/bulk-import', 'POST', ticketsData, token);
 };
+
+
+
+
 
 // // src/services/api.js
 // const API_BASE = import.meta.env.VITE_API_URL || 'https://stilt-ardently-recoup.ngrok-free.dev/api';  //http://localhost:5000

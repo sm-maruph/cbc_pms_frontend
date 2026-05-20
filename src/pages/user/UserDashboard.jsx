@@ -14,12 +14,15 @@ import {
 } from "lucide-react";
 
 // Import API functions
+// Import API functions
 import {
   updateTicket,
   getAssignableUsers,
   getTicketBySL,
   getDashboardStats,
-  getPaginatedTickets
+  getPaginatedTickets,
+  getTopSystems,     // ✅ ADD THIS LINE
+  getDownAtms        // ✅ ADD THIS LINE
 } from "../../services/api";
 
 // Add this new import for Socket.IO
@@ -103,7 +106,11 @@ export default function UserDashboard({ user }) {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const token = localStorage.getItem("cbcToken");
   const currentUserEmail = user?.email || localStorage.getItem("userEmail");
-
+  // Add these after your existing state variables
+  const [topSystems, setTopSystems] = useState([]);
+  const [downAtms, setDownAtms] = useState([]);
+  const [isLoadingSystems, setIsLoadingSystems] = useState(false);
+  const [isLoadingAtms, setIsLoadingAtms] = useState(false);
   // ✅ ADD THIS DEBUGGING CODE
   console.log("=== USER DEBUG INFO ===");
   console.log("Current User Object:", user);
@@ -200,11 +207,41 @@ export default function UserDashboard({ user }) {
     }
   };
 
+  // Fetch top 10 systems
+  const fetchTopSystems = async () => {
+    if (!token) return;
+    setIsLoadingSystems(true);
+    try {
+      const data = await getTopSystems(token, dateFilter);
+      setTopSystems(data);
+    } catch (err) {
+      console.error("Failed to fetch top systems:", err);
+    } finally {
+      setIsLoadingSystems(false);
+    }
+  };
+
+  // Fetch currently down ATMs
+  const fetchDownAtms = async () => {
+    if (!token) return;
+    setIsLoadingAtms(true);
+    try {
+      const data = await getDownAtms(token);
+      setDownAtms(data);
+    } catch (err) {
+      console.error("Failed to fetch down ATMs:", err);
+    } finally {
+      setIsLoadingAtms(false);
+    }
+  };
+
   // Initial data load
   useEffect(() => {
     fetchDashboardStats();
     fetchPaginatedTickets();
     fetchUsers();
+    fetchTopSystems();  // Add this
+    fetchDownAtms();    // Add this
   }, [token]);
 
   // Refetch when filters change (reset to page 1)
@@ -226,6 +263,12 @@ export default function UserDashboard({ user }) {
     fetchDashboardStats();
   }, [dateFilter]);
 
+  // Refetch top systems when date filter changes
+  useEffect(() => {
+    if (token) {
+      fetchTopSystems();
+    }
+  }, [dateFilter]);
 
   // Socket.IO for real-time updates
   useEffect(() => {
@@ -272,6 +315,31 @@ export default function UserDashboard({ user }) {
         fetchPaginatedTickets();
         fetchDashboardStats();
       });
+      // Add these inside your socket useEffect, after existing listeners
+
+      // Listen for top systems updates
+      socketService.on('top-systems-updated', (data) => {
+        console.log('📊 Top systems updated:', data);
+        fetchTopSystems();
+      });
+
+      // Listen for down ATMs updates
+      socketService.on('down-atms-updated', (data) => {
+        console.log('🏧 Down ATMs updated:', data);
+        fetchDownAtms();
+      });
+
+      // Listen for direct data events (if you implement the periodic updates)
+      socketService.on('top-systems-data', (data) => {
+        console.log('📊 Top systems data received:', data);
+        setTopSystems(data);
+      });
+
+      socketService.on('down-atms-data', (data) => {
+        console.log('🏧 Down ATMs data received:', data);
+        setDownAtms(data);
+      });
+
     }
 
     return () => {
@@ -279,6 +347,10 @@ export default function UserDashboard({ user }) {
       socketService.off('ticket-updated');
       socketService.off('stats-updated');
       socketService.off('ticket-status-changed');
+      socketService.off('top-systems-updated');  // Add this
+      socketService.off('down-atms-updated');    // Add this
+      socketService.off('top-systems-data');     // Add this
+      socketService.off('down-atms-data');       // Add this
     };
   }, [user?.email, token, currentPage]);
 
@@ -290,20 +362,28 @@ export default function UserDashboard({ user }) {
     const interval = setInterval(() => {
       console.log('🔄 Auto-refreshing dashboard...');
       fetchDashboardStats();
+      fetchTopSystems();  // Add this
+      fetchDownAtms();    // Add this
       if (currentPage === 1) {
         fetchPaginatedTickets();
       }
-    }, 30000);
+    }, 60000);
 
     return () => clearInterval(interval);
   }, [autoRefresh, currentPage]);
 
   // Helper: Format downtime as relative time with color
   const getRelativeTime = (downTimeString, status) => {
-    // If ticket is resolved, return neutral background
+    // If ticket is resolved, show raw formatted datetime (like Up Time)
     if (status === 'resolved') {
-      return { text: downTimeString, bgColor: 'bg-gray-100', textColor: 'text-gray-500' };
+      try {
+        const formattedDate = formatDateTime(downTimeString);
+        return { text: formattedDate, bgColor: 'bg-gray-100', textColor: 'text-gray-500' };
+      } catch (e) {
+        return { text: downTimeString, bgColor: 'bg-gray-100', textColor: 'text-gray-500' };
+      }
     }
+
 
     if (!downTimeString) return { text: 'Not set', bgColor: 'bg-gray-100', textColor: 'text-gray-600' };
 
@@ -774,7 +854,7 @@ export default function UserDashboard({ user }) {
 
   //   return filteredTickets;
   // }, [tickets, search, filterStatus, sortBy, dateFilter]);
-  
+
   const filtered = tickets;
 
   // const statusChartData = [
@@ -888,6 +968,84 @@ export default function UserDashboard({ user }) {
       Refresh
     </button>
   );
+
+
+  // Helper: Calculate resolution time (difference between down_time and up_time)
+  const getResolutionTime = (downTimeString, upTimeString) => {
+    if (!downTimeString || !upTimeString) return '-';
+
+    try {
+      // Parse the dates
+      let downTime, upTime;
+
+      // Handle different date formats
+      if (typeof downTimeString === 'string') {
+        downTime = new Date(downTimeString);
+      } else {
+        downTime = new Date(downTimeString);
+      }
+
+      if (typeof upTimeString === 'string') {
+        upTime = new Date(upTimeString);
+      } else {
+        upTime = new Date(upTimeString);
+      }
+
+      // Check if dates are valid
+      if (isNaN(downTime.getTime()) || isNaN(upTime.getTime())) {
+        console.log('Invalid date:', { downTimeString, upTimeString });
+        return '-';
+      }
+
+      // Calculate difference in milliseconds
+      const diffMs = upTime - downTime;
+
+      // If difference is negative or zero, return '-'
+      if (diffMs <= 0) return '-';
+
+      // Calculate time components
+      const totalSeconds = Math.floor(diffMs / 1000);
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+
+      // Format the output - always show hours, minutes, seconds
+      const parts = [];
+
+      if (hours > 0) {
+        parts.push(`${hours}h`);
+      }
+      if (minutes > 0 || hours > 0) {
+        parts.push(`${minutes}m`);
+      }
+      parts.push(`${seconds}s`);
+
+      return parts.join(' ');
+    } catch (e) {
+      console.error('Error calculating resolution time:', e);
+      return '-';
+    }
+  };
+
+  // Helper: Format date/time for human readable display
+  const formatDateTime = (dateString) => {
+    if (!dateString) return '-';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return '-';
+      return date.toLocaleString('en-US', {
+        month: 'numeric',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      });
+    } catch (e) {
+      return '-';
+    }
+  };
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-4 md:p-6">
@@ -1063,21 +1221,22 @@ export default function UserDashboard({ user }) {
         </div>
       </div>
 
-      {/* PIE CHARTS */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+      {/* CHARTS AND LISTS SECTION - 4 columns */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
+        {/* Status Distribution - Smaller */}
         <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
           <h2 className="text-md font-semibold text-gray-800 mb-3 flex items-center gap-2">
-            <TrendingUp size={18} /> Status Distribution
+            <TrendingUp size={18} /> Status
           </h2>
-          <ResponsiveContainer width="100%" height={260}>
+          <ResponsiveContainer width="100%" height={200}>
             <PieChart>
               <Pie
                 data={statusChartData}
                 cx="50%"
                 cy="50%"
                 labelLine={false}
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                outerRadius={80}
+                label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
+                outerRadius={70}
                 fill="#8884d8"
                 dataKey="value"
               >
@@ -1086,24 +1245,32 @@ export default function UserDashboard({ user }) {
                 ))}
               </Pie>
               <Tooltip />
-              <Legend onClick={(e) => handleCardClick(e.value.toLowerCase().replace(" ", "-"))} />
             </PieChart>
           </ResponsiveContainer>
+          <div className="flex justify-center gap-3 mt-2 flex-wrap">
+            {statusChartData.map((item) => (
+              <div key={item.name} className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }}></div>
+                <span className="text-xs text-gray-600">{item.name}: {item.value}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
+        {/* Risk Assessment - Smaller */}
         <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
           <h2 className="text-md font-semibold text-gray-800 mb-3 flex items-center gap-2">
-            <AlertCircle size={18} /> Risk Assessment (Active Tickets Only)
+            <AlertCircle size={18} /> Risk
           </h2>
-          <ResponsiveContainer width="100%" height={260}>
+          <ResponsiveContainer width="100%" height={200}>
             <PieChart>
               <Pie
                 data={riskChartData}
                 cx="50%"
                 cy="50%"
                 labelLine={false}
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                outerRadius={80}
+                label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
+                outerRadius={70}
                 fill="#8884d8"
                 dataKey="value"
               >
@@ -1112,12 +1279,139 @@ export default function UserDashboard({ user }) {
                 ))}
               </Pie>
               <Tooltip />
-              <Legend />
             </PieChart>
           </ResponsiveContainer>
+          <div className="flex justify-center gap-3 mt-2 flex-wrap">
+            {riskChartData.map((item) => (
+              <div key={item.name} className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }}></div>
+                <span className="text-xs text-gray-600">{item.name}: {item.value}</span>
+              </div>
+            ))}
+          </div>
           <p className="text-xs text-gray-400 text-center mt-2">
-            * Excludes resolved tickets. Active tickets: {stats.activeTotal}
+            Active: {stats.activeTotal}
           </p>
+        </div>
+
+        {/* Top 10 Systems - New List */}
+        <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
+          <h2 className="text-md font-semibold text-gray-800 mb-3 flex items-center gap-2">
+            <Server size={18} /> Top 10 Systems
+            {dateFilter !== 'all' && (
+              <span className="text-xs font-normal text-gray-500">
+                ({dateFilterButtons.find(b => b.value === dateFilter)?.label})
+              </span>
+            )}
+          </h2>
+          {isLoadingSystems ? (
+            <div className="flex justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+          ) : topSystems.length === 0 ? (
+            <div className="text-center py-8 text-gray-400">
+              <Server size={32} className="mx-auto mb-2 opacity-50" />
+              <p className="text-sm">No data available</p>
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-[280px] overflow-y-auto">
+              {topSystems.map((system, index) => (
+                <div key={system.system_name} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg transition group">
+                  <div className="flex items-center gap-3 flex-1">
+                    <span className={`text-xs font-bold ${index < 3 ? 'text-yellow-600' : 'text-gray-400'} w-6`}>
+                      #{index + 1}
+                    </span>
+                    <span className="text-sm font-medium text-gray-700 truncate flex-1" title={system.system_name}>
+                      {system.system_name}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-20 bg-gray-200 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-full h-2 transition-all duration-500"
+                        style={{ width: `${Math.min((system.ticket_count / topSystems[0]?.ticket_count) * 100, 100)}%` }}
+                      ></div>
+                    </div>
+                    <span className="text-sm font-semibold text-gray-800 min-w-[40px] text-right">
+                      {system.ticket_count}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Currently Down ATMs - New List */}
+        <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
+          <h2 className="text-md font-semibold text-gray-800 mb-3 flex items-center gap-2">
+            <AlertTriangle size={18} /> Down ATMs
+            {downAtms.length > 0 && (
+              <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full animate-pulse">
+                {downAtms.length}
+              </span>
+            )}
+          </h2>
+          {isLoadingAtms ? (
+            <div className="flex justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+          ) : downAtms.length === 0 ? (
+            <div className="text-center py-8 text-gray-400">
+              <CheckCircle size={32} className="mx-auto mb-2 opacity-50" />
+              <p className="text-sm">All ATMs operational</p>
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-[280px] overflow-y-auto">
+              {downAtms.map((atm) => (
+                <div
+                  key={atm.id}
+                  className="p-3 bg-red-50 border border-red-100 rounded-lg hover:shadow-md transition-all cursor-pointer hover:bg-red-100"
+                  onClick={() => {
+                    // Find the full ticket data and show in view modal
+                    const fullTicket = tickets.find(t => t.id === atm.id.toString());
+                    if (fullTicket) {
+                      setViewTicket(fullTicket);
+                    } else {
+                      // If not in current tickets list, fetch or show basic info
+                      setViewTicket(atm);
+                    }
+                  }}
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-gray-800 text-sm">{atm.system_name}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${atm.risk_label === 'HIGH' ? 'bg-red-200 text-red-700' :
+                          atm.risk_label === 'MEDIUM' ? 'bg-orange-200 text-orange-700' :
+                            'bg-blue-200 text-blue-700'
+                          }`}>
+                          {atm.risk_label || 'LOW'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600 truncate">{atm.branch || 'Location not specified'}</p>
+                    </div>
+                    <div className="text-right">
+                      <div className="flex items-center gap-1 text-red-600">
+                        <Clock size={12} />
+                        <span className="text-xs font-semibold">{atm.down_time_duration || 'Unknown'}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-gray-500">#{atm.ticket_sl}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-xs ${atm.status === 'open' ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-600'
+                      }`}>
+                      {atm.status === 'open' ? 'Open' : 'In Progress'}
+                    </span>
+                  </div>
+                  {atm.problem_details && (
+                    <p className="text-xs text-gray-500 mt-2 line-clamp-2">{atm.problem_details}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -1196,6 +1490,7 @@ export default function UserDashboard({ user }) {
                 <th className="p-3 text-left font-semibold text-gray-600">Problem</th>
                 <th className="p-3 text-left font-semibold text-gray-600">Down Time</th>
                 <th className="p-3 text-left font-semibold text-gray-600">Up Time</th>
+                <th className="p-3 text-left font-semibold text-gray-600">Resolution Time</th>
                 <th className="p-3 text-left font-semibold text-gray-600">Risk</th>
                 <th className="p-3 text-left font-semibold text-gray-600">Status</th>
                 <th className="p-3 text-center font-semibold text-gray-600">Actions</th>
@@ -1274,6 +1569,7 @@ export default function UserDashboard({ user }) {
                           </div>
                         )}
                       </td>
+
                       <td className="p-3 text-gray-500 text-xs whitespace-nowrap">
                         {t.upTime ? (
                           <div className="flex items-center gap-1">
@@ -1281,6 +1577,29 @@ export default function UserDashboard({ user }) {
                             {t.upTime}
                           </div>
                         ) : "-"}
+                      </td>
+                      <td className="p-3 text-xs whitespace-nowrap">
+                        {t.status === 'resolved' && t.downTime && t.upTime ? (
+                          (() => {
+                            const resolutionTime = getResolutionTime(t.downTime, t.upTime);
+                            return (
+                              <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-green-100 text-green-700 w-fit">
+                                <CheckCircle size={12} />
+                                <span className="font-medium">{resolutionTime}</span>
+                              </div>
+                            );
+                          })()
+                        ) : t.status === 'resolved' ? (
+                          <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-gray-100 text-gray-500 w-fit">
+                            <Clock size={12} />
+                            <span>N/A</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-gray-100 text-gray-500 w-fit">
+                            <Clock size={12} />
+                            <span>In Progress</span>
+                          </div>
+                        )}
                       </td>
                       <td className="p-3">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${risk.color}`}>
@@ -1314,7 +1633,7 @@ export default function UserDashboard({ user }) {
                           >
                             <Eye size={14} />
                           </button>
-                          {canEditTicket(t) && (
+                          {canEditTicket(t) && t.status !== 'resolved' && (
                             <button
                               className="p-1 text-green-600 hover:bg-green-50 rounded transition"
                               onClick={() => {
@@ -1646,6 +1965,43 @@ export default function UserDashboard({ user }) {
         .animate-slide-in {
           animation: slide-in 0.3s ease-out;
         }
+          /* Add to your existing style tag */
+.overflow-y-auto::-webkit-scrollbar {
+  width: 6px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 10px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@media (max-width: 1024px) {
+  .grid-cols-1.lg\:grid-cols-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .grid-cols-1.lg\:grid-cols-4 {
+    grid-template-columns: 1fr;
+  }
+}
       `}</style>
     </div>
   );
