@@ -81,7 +81,6 @@ export const getDownAtms = async (token) => {
 
 
 
-
 // Reports
 export const getReportData = (range, startDate, endDate, token) => {
     let url = `/reports?range=${range}`;

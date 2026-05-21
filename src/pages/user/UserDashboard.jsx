@@ -1173,7 +1173,7 @@ export default function UserDashboard({ user }) {
       <div className="mb-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">
+            <h1 className="text-l md:text-xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">
               Incident Dashboard
             </h1>
             <p className="text-gray-500 mt-1">Welcome back, {user?.name || "User"}</p>
