@@ -1044,7 +1044,6 @@ export default function UserDashboard({ user }) {
   }, [filtered]);
 
   // Confirm resolution
-  // Confirm resolution
   const confirmResolution = async () => {
     try {
       // Convert up_time to proper ISO format for SQL Server
