@@ -21,7 +21,7 @@ import {
   getTicketBySL,
   getDashboardStats,
   getPaginatedTickets,
-  getTopSystems,     // ✅ ADD THIS LINE
+  // getTopSystems,     // ✅ ADD THIS LINE
   getDownAtms        // ✅ ADD THIS LINE
 } from "../../services/api";
 
@@ -107,7 +107,7 @@ export default function UserDashboard({ user }) {
   const token = localStorage.getItem("cbcToken");
   const currentUserEmail = user?.email || localStorage.getItem("userEmail");
   // Add these after your existing state variables
-  const [topSystems, setTopSystems] = useState([]);
+  // const [topSystems, setTopSystems] = useState([]);
   const [downAtms, setDownAtms] = useState([]);
   const [isLoadingSystems, setIsLoadingSystems] = useState(false);
   const [isLoadingAtms, setIsLoadingAtms] = useState(false);
@@ -208,18 +208,18 @@ export default function UserDashboard({ user }) {
   };
 
   // Fetch top 10 systems
-  const fetchTopSystems = async () => {
-    if (!token) return;
-    setIsLoadingSystems(true);
-    try {
-      const data = await getTopSystems(token, dateFilter);
-      setTopSystems(data);
-    } catch (err) {
-      console.error("Failed to fetch top systems:", err);
-    } finally {
-      setIsLoadingSystems(false);
-    }
-  };
+  // const fetchTopSystems = async () => {
+  //   if (!token) return;
+  //   setIsLoadingSystems(true);
+  //   try {
+  //     const data = await getTopSystems(token, dateFilter);
+  //     setTopSystems(data);
+  //   } catch (err) {
+  //     console.error("Failed to fetch top systems:", err);
+  //   } finally {
+  //     setIsLoadingSystems(false);
+  //   }
+  // };
 
   // Fetch currently down ATMs
   const fetchDownAtms = async () => {
@@ -240,7 +240,7 @@ export default function UserDashboard({ user }) {
     fetchDashboardStats();
     fetchPaginatedTickets();
     fetchUsers();
-    fetchTopSystems();  // Add this
+    // fetchTopSystems();  // Add this
     fetchDownAtms();    // Add this
   }, [token]);
 
@@ -263,12 +263,12 @@ export default function UserDashboard({ user }) {
     fetchDashboardStats();
   }, [dateFilter]);
 
-  // Refetch top systems when date filter changes
-  useEffect(() => {
-    if (token) {
-      fetchTopSystems();
-    }
-  }, [dateFilter]);
+  // // Refetch top systems when date filter changes
+  // useEffect(() => {
+  //   if (token) {
+  //     fetchTopSystems();
+  //   }
+  // }, [dateFilter]);
 
   // Socket.IO for real-time updates
   useEffect(() => {
@@ -317,11 +317,11 @@ export default function UserDashboard({ user }) {
       });
       // Add these inside your socket useEffect, after existing listeners
 
-      // Listen for top systems updates
-      socketService.on('top-systems-updated', (data) => {
-        console.log('📊 Top systems updated:', data);
-        fetchTopSystems();
-      });
+      // // Listen for top systems updates
+      // socketService.on('top-systems-updated', (data) => {
+      //   console.log('📊 Top systems updated:', data);
+      //   fetchTopSystems();
+      // });
 
       // Listen for down ATMs updates
       socketService.on('down-atms-updated', (data) => {
@@ -329,11 +329,11 @@ export default function UserDashboard({ user }) {
         fetchDownAtms();
       });
 
-      // Listen for direct data events (if you implement the periodic updates)
-      socketService.on('top-systems-data', (data) => {
-        console.log('📊 Top systems data received:', data);
-        setTopSystems(data);
-      });
+      // // Listen for direct data events (if you implement the periodic updates)
+      // socketService.on('top-systems-data', (data) => {
+      //   console.log('📊 Top systems data received:', data);
+      //   setTopSystems(data);
+      // });
 
       socketService.on('down-atms-data', (data) => {
         console.log('🏧 Down ATMs data received:', data);
@@ -362,7 +362,7 @@ export default function UserDashboard({ user }) {
     const interval = setInterval(() => {
       console.log('🔄 Auto-refreshing dashboard...');
       fetchDashboardStats();
-      fetchTopSystems();  // Add this
+      // fetchTopSystems();  // Add this
       fetchDownAtms();    // Add this
       if (currentPage === 1) {
         fetchPaginatedTickets();
@@ -555,38 +555,8 @@ export default function UserDashboard({ user }) {
     }
   };
 
-  // Confirm resolution
-  // Confirm resolution
-  const confirmResolution = async () => {
-    try {
-      // Convert up_time to proper ISO format for SQL Server
-      let upTimeFormatted = resolutionData.upTime;
-      if (upTimeFormatted) {
-        const parsedDate = new Date(upTimeFormatted);
-        if (!isNaN(parsedDate.getTime())) {
-          upTimeFormatted = parsedDate.toISOString();
-        } else {
-          upTimeFormatted = new Date().toISOString();
-        }
-      } else {
-        upTimeFormatted = new Date().toISOString();
-      }
 
-      await updateTicket(resolutionPopup.id, {
-        status: "resolved",
-        root_cause: resolutionData.rootCause,
-        up_time: upTimeFormatted,
-      }, token);
-      notify("Ticket resolved successfully");
-      setResolutionPopup(null);
-      setResolutionData({ rootCause: "", upTime: "" });
-      fetchPaginatedTickets(); // ✅ Fixed
-      fetchDashboardStats();;
-    } catch (err) {
-      console.error("Resolution error:", err);
-      notify("Resolution failed", "error");
-    }
-  };
+
 
 
 
@@ -1046,6 +1016,67 @@ export default function UserDashboard({ user }) {
     }
   };
 
+  // // Get top systems based on current filtered tickets
+  const getTopSystems = (ticketsList, limit = 5) => {
+    // Count tickets per system
+    const systemCount = {};
+
+    ticketsList.forEach(ticket => {
+      const systemName = ticket.system_name || 'Unknown';
+      if (systemName && systemName !== 'Unknown') {
+        systemCount[systemName] = (systemCount[systemName] || 0) + 1;
+      }
+    });
+
+    // Convert to array and sort by count
+    const sortedSystems = Object.entries(systemCount)
+      .map(([system_name, ticket_count]) => ({ system_name, ticket_count }))
+      .sort((a, b) => b.ticket_count - a.ticket_count)
+      .slice(0, limit);
+
+    return sortedSystems;
+  };
+
+  // Inside your UserDashboard component
+  const topSystems = useMemo(() => {
+    // Use filtered (which already respects date, search, status filters)
+    return getTopSystems(filtered, 10);
+  }, [filtered]);
+
+  // Confirm resolution
+  // Confirm resolution
+  const confirmResolution = async () => {
+    try {
+      // Convert up_time to proper ISO format for SQL Server
+      let upTimeFormatted = resolutionData.upTime;
+      if (upTimeFormatted) {
+        const parsedDate = new Date(upTimeFormatted);
+        if (!isNaN(parsedDate.getTime())) {
+          upTimeFormatted = parsedDate.toISOString();
+        } else {
+          upTimeFormatted = new Date().toISOString();
+        }
+      } else {
+        upTimeFormatted = new Date().toISOString();
+      }
+
+      await updateTicket(resolutionPopup.id, {
+        status: "resolved",
+        root_cause: resolutionData.rootCause,
+        up_time: upTimeFormatted,
+      }, token);
+      notify("Ticket resolved successfully");
+      setResolutionPopup(null);
+      setResolutionData({ rootCause: "", upTime: "" });
+      fetchPaginatedTickets(); // ✅ Fixed
+      fetchDashboardStats();;
+    } catch (err) {
+      console.error("Resolution error:", err);
+      notify("Resolution failed", "error");
+    }
+  };
+
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-4 md:p-6">
@@ -1295,49 +1326,37 @@ export default function UserDashboard({ user }) {
         </div>
 
         {/* Top 10 Systems - New List */}
+        {/* Top Systems Chart */}
         <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
           <h2 className="text-md font-semibold text-gray-800 mb-3 flex items-center gap-2">
-            <Server size={18} /> Top 10 Systems
-            {dateFilter !== 'all' && (
-              <span className="text-xs font-normal text-gray-500">
-                ({dateFilterButtons.find(b => b.value === dateFilter)?.label})
-              </span>
-            )}
+            <Server size={18} /> Top Systems by Ticket Count
           </h2>
-          {isLoadingSystems ? (
-            <div className="flex justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-            </div>
-          ) : topSystems.length === 0 ? (
+          {topSystems.length === 0 ? (
             <div className="text-center py-8 text-gray-400">
               <Server size={32} className="mx-auto mb-2 opacity-50" />
               <p className="text-sm">No data available</p>
             </div>
           ) : (
-            <div className="space-y-3 max-h-[280px] overflow-y-auto">
-              {topSystems.map((system, index) => (
-                <div key={system.system_name} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg transition group">
-                  <div className="flex items-center gap-3 flex-1">
-                    <span className={`text-xs font-bold ${index < 3 ? 'text-yellow-600' : 'text-gray-400'} w-6`}>
-                      #{index + 1}
-                    </span>
-                    <span className="text-sm font-medium text-gray-700 truncate flex-1" title={system.system_name}>
-                      {system.system_name}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-20 bg-gray-200 rounded-full h-2 overflow-hidden">
-                      <div
-                        className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-full h-2 transition-all duration-500"
-                        style={{ width: `${Math.min((system.ticket_count / topSystems[0]?.ticket_count) * 100, 100)}%` }}
-                      ></div>
+            <div className="space-y-3">
+              {topSystems.map((system, index) => {
+                const percentage = (system.ticket_count / filtered.length) * 100;
+                return (
+                  <div key={system.system_name}>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="font-medium text-gray-700">
+                        {index + 1}. {system.system_name}
+                      </span>
+                      <span className="text-gray-500">{system.ticket_count} tickets</span>
                     </div>
-                    <span className="text-sm font-semibold text-gray-800 min-w-[40px] text-right">
-                      {system.ticket_count}
-                    </span>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                        style={{ width: `${percentage}%` }}
+                      />
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
