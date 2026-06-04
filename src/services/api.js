@@ -1,5 +1,5 @@
 // src/services/api.js
-const API_BASE = import.meta.env.VITE_API_URL || 'https://stilt-ardently-recoup.ngrok-free.dev/api';  //http://localhost:5000
+const API_BASE = import.meta.env.VITE_API_URL;  //https://stilt-ardently-recoup.ngrok-free.dev/api
 
 // Helper to get headers with ngrok skip
 const getHeaders = (token) => {

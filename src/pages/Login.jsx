@@ -2,12 +2,14 @@ import React, { useState } from "react";
 import logo from "../../src/components/images/cbc_logo.png";
 
 export default function Login({ onLogin }) {
-  const [email, setEmail] = useState("");
+  const [employeeId, setEmployeeId] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const API_BASE = import.meta.env.VITE_API_URL || "https://stilt-ardently-recoup.ngrok-free.dev/api";  //http://localhost:5000
+  const API_BASE =
+    import.meta.env.VITE_API_URL ; //|| "http://localhost:5000/api" ||
+    "https://stilt-ardently-recoup.ngrok-free.dev/api"
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -18,30 +20,41 @@ export default function Login({ onLogin }) {
       const response = await fetch(`${API_BASE}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({
+          employee_id: employeeId,   // ✅ FIXED
+          password: password
+        }),
       });
+
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || "Invalid credentials");
+
+      if (!response.ok) {
+        throw new Error(data.message || "Invalid credentials");
+      }
 
       const { token, user } = data;
+
       localStorage.setItem("cbcToken", token);
       localStorage.setItem("cbcUser", JSON.stringify(user));
+
       onLogin(user);
+
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
   };
+
   return (
     <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden
       bg-gradient-to-br from-green-500 via-blue-600 to-blue-900">
 
-      {/* 🔥 BACKGROUND GLOW EFFECTS */}
+      {/* BACKGROUND EFFECTS */}
       <div className="absolute w-72 h-72 bg-green-400 opacity-30 rounded-full blur-3xl top-10 left-10"></div>
       <div className="absolute w-72 h-72 bg-blue-400 opacity-30 rounded-full blur-3xl bottom-10 right-10"></div>
 
-      {/* 💎 GLASS CARD */}
+      {/* LOGIN CARD */}
       <div className="w-full max-w-md p-8 rounded-2xl 
         bg-white/10 backdrop-blur-xl border border-white/20 
         shadow-[0_10px_40px_rgba(0,0,0,0.3)]">
@@ -63,21 +76,21 @@ export default function Login({ onLogin }) {
         {/* FORM */}
         <form onSubmit={handleSubmit} className="space-y-5">
 
-          {/* EMAIL */}
+          {/* EMPLOYEE ID */}
           <div>
             <label className="text-sm text-white/80 mb-1 block">
-              Email Address
+              Employee ID
             </label>
             <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              type="text"
+              value={employeeId}
+              onChange={(e) => setEmployeeId(e.target.value)}
               className="w-full px-4 py-3 rounded-lg 
                 bg-white/20 text-white placeholder-white/60
                 border border-white/30 
                 focus:outline-none focus:ring-2 focus:ring-green-400
                 transition"
-              placeholder="Enter your email"
+              placeholder="Enter Employee ID (e.g. BD06654)"
               required
             />
           </div>
@@ -121,13 +134,6 @@ export default function Login({ onLogin }) {
             {loading ? "Signing in..." : "Sign In"}
           </button>
         </form>
-
-        {/* DEMO INFO – kept as reference */}
-        <div className="mt-8 border-t border-white/20 pt-5 text-xs text-white/80">
-          <p className="font-semibold mb-2">Demo:</p>
-          <p>Admin: admin@cbc.com / admin123</p>
-          <p>User: user@cbc.com / user123</p>
-        </div>
 
         {/* FOOTER */}
         <div className="mt-6 text-center text-xs text-white/60">

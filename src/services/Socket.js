@@ -30,7 +30,7 @@ class SocketService {
 
         this.currentUserEmail = userEmail;
         
-        const SOCKET_URL = import.meta.env.VITE_API_URL || 'https://stilt-ardently-recoup.ngrok-free.dev'; //http://localhost:5000
+        const SOCKET_URL = import.meta.env.VITE_API_URL; // || 'https://stilt-ardently-recoup.ngrok-free.dev' || 'http://localhost:5000'
         
         this.socket = io(SOCKET_URL, {
             transports: ['websocket', 'polling'], // Fallback to polling if websocket fails
