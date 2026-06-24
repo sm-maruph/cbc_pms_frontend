@@ -4,7 +4,7 @@ import io from 'socket.io-client';
 class SocketService {
     constructor() {
         this.socket = null;
-        this.listeners = new Map();
+        this.listeners = new Map();   // event → array of callbacks
         this.isConnected = false;
         this.currentUserEmail = null;
         this.reconnectAttempts = 0;
@@ -18,22 +18,22 @@ class SocketService {
             return null;
         }
 
-        if (this.socket && this.isConnected) {
-            console.log('✅ Socket already connected');
-            return this.socket;
-        }
-
-        // Disconnect existing socket if any
+        // Reuse an existing socket for the SAME user (connected OR still connecting).
+        // Do NOT disconnect — that wipes listeners other components just registered.
         if (this.socket) {
+            if (this.currentUserEmail === userEmail) {
+                return this.socket;
+            }
+            // Different user — only then tear down and rebuild
             this.disconnect();
         }
 
         this.currentUserEmail = userEmail;
-        
-        const SOCKET_URL = import.meta.env.VITE_API_URL; // || 'https://stilt-ardently-recoup.ngrok-free.dev' || 'http://localhost:5000'
-        
+
+        const RAW = import.meta.env.VITE_API_URL || "http://192.168.23.17:5000/api" || "http://localhost:5000/api";
+        const SOCKET_URL = RAW.replace(/\/api\/?$/, '');
         this.socket = io(SOCKET_URL, {
-            transports: ['websocket', 'polling'], // Fallback to polling if websocket fails
+            transports: ['websocket', 'polling'],
             reconnection: true,
             reconnectionAttempts: this.maxReconnectAttempts,
             reconnectionDelay: 1000,
@@ -42,22 +42,19 @@ class SocketService {
             autoConnect: true
         });
 
-        // Connection event handlers
         this.socket.on('connect', () => {
             console.log('✅ Socket connected:', this.socket.id);
             this.isConnected = true;
             this.reconnectAttempts = 0;
-            this.register(userEmail);
+            this.register(this.currentUserEmail);
             this.processEventQueue();
         });
 
         this.socket.on('disconnect', (reason) => {
             console.log('❌ Socket disconnected:', reason);
             this.isConnected = false;
-            
-            // Handle specific disconnect reasons
+
             if (reason === 'io server disconnect') {
-                // Server disconnected, attempt to reconnect manually
                 setTimeout(() => {
                     if (this.currentUserEmail) {
                         this.connect(this.currentUserEmail);
@@ -70,7 +67,7 @@ class SocketService {
             console.error('Socket connection error:', error.message);
             this.isConnected = false;
             this.reconnectAttempts++;
-            
+
             if (this.reconnectAttempts >= this.maxReconnectAttempts) {
                 console.error('Max reconnection attempts reached. Giving up.');
                 this.socket?.close();
@@ -110,7 +107,6 @@ class SocketService {
             });
             console.log('📝 Registered user:', userEmail);
         } else {
-            // Queue registration for when connection is established
             this.queueEvent('register', { userEmail });
         }
     }
@@ -151,7 +147,6 @@ class SocketService {
             console.warn('⚠️ Cannot join room: No ticket ID provided');
             return;
         }
-        
         if (this.socket && this.isConnected) {
             this.socket.emit('join-ticket-room', ticketId);
             console.log(`📌 Joined ticket room: ${ticketId}`);
@@ -165,29 +160,34 @@ class SocketService {
             console.warn('⚠️ Cannot leave room: No ticket ID provided');
             return;
         }
-        
         if (this.socket && this.isConnected) {
             this.socket.emit('leave-ticket-room', ticketId);
             console.log(`🚪 Left ticket room: ${ticketId}`);
         }
     }
 
+    // ── Multiple handlers per event ──
     on(eventName, callback) {
         if (!eventName || typeof callback !== 'function') {
             console.error('❌ Invalid event registration');
             return;
         }
-        
-        if (this.socket) {
-            // Remove existing listener if any
-            this.off(eventName);
-            
-            this.socket.on(eventName, callback);
-            this.listeners.set(eventName, callback);
-            console.log(`🎧 Listening to event: ${eventName}`);
-        } else {
+        if (!this.socket) {
             console.warn(`⚠️ Socket not initialized, cannot listen to: ${eventName}`);
+            return;
         }
+
+        if (!this.listeners.has(eventName)) {
+            this.listeners.set(eventName, []);
+        }
+        const arr = this.listeners.get(eventName);
+
+        // don't double-register the exact same callback
+        if (arr.includes(callback)) return;
+
+        arr.push(callback);
+        this.socket.on(eventName, callback);
+        console.log(`🎧 Listening to event: ${eventName} (${arr.length} handler(s))`);
     }
 
     once(eventName, callback) {
@@ -197,21 +197,30 @@ class SocketService {
         }
     }
 
-    off(eventName) {
-        if (this.socket) {
-            const callback = this.listeners.get(eventName);
-            if (callback) {
-                this.socket.off(eventName, callback);
-                this.listeners.delete(eventName);
-                console.log(`🔇 Stopped listening to event: ${eventName}`);
-            }
+    // off(event)            → removes ALL handlers for that event
+    // off(event, callback)  → removes only that one handler
+    off(eventName, callback) {
+        if (!this.socket) return;
+        const arr = this.listeners.get(eventName);
+        if (!arr) return;
+
+        if (callback) {
+            this.socket.off(eventName, callback);
+            const next = arr.filter(cb => cb !== callback);
+            if (next.length) this.listeners.set(eventName, next);
+            else this.listeners.delete(eventName);
+            console.log(`🔇 Removed one handler for: ${eventName}`);
+        } else {
+            arr.forEach(cb => this.socket.off(eventName, cb));
+            this.listeners.delete(eventName);
+            console.log(`🔇 Stopped listening to event: ${eventName}`);
         }
     }
 
     removeAllListeners() {
         if (this.socket) {
-            this.listeners.forEach((callback, eventName) => {
-                this.socket.off(eventName, callback);
+            this.listeners.forEach((arr, eventName) => {
+                arr.forEach(cb => this.socket.off(eventName, cb));
             });
             this.listeners.clear();
             console.log('🔇 Removed all event listeners');
@@ -241,7 +250,6 @@ class SocketService {
         }
     }
 
-    // Health check method
     isAlive() {
         return this.isConnected && this.socket?.connected;
     }

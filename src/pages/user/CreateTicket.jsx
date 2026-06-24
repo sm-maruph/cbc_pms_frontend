@@ -119,12 +119,13 @@ export default function CreateTicket({ user }) {
   useEffect(() => {
     const fetchStaticData = async () => {
       setDataLoading(true);
+      const token = localStorage.getItem("cbcToken");   // read token first
       try {
         const [systems, departments, branches, templates] = await Promise.all([
-          getSystems(),
-          getDepartments(),
-          getBranches(),
-          getTemplates()
+          getSystems(token),        // pass token
+          getDepartments(token),
+          getBranches(token),
+          getTemplates(token)
         ]);
 
         setSystemOptions(systems);
@@ -132,8 +133,6 @@ export default function CreateTicket({ user }) {
         setBranchOptions(branches);
         setTemplatesList(templates);
 
-        // Fetch user favorites if logged in
-        const token = localStorage.getItem("cbcToken");
         if (token) {
           try {
             const userFavorites = await getUserFavorites(token);
@@ -149,7 +148,6 @@ export default function CreateTicket({ user }) {
         setDataLoading(false);
       }
     };
-
     fetchStaticData();
   }, []);
 
@@ -692,7 +690,7 @@ export default function CreateTicket({ user }) {
                     >
                       <option value="">Unassigned</option>
                       {assignableUsers.map((user) => (
-                        <option key={user.id} value={user.email}>  
+                        <option key={user.id} value={user.email}>
                           {user.name}
                         </option>
                       ))}
